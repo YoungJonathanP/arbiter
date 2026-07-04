@@ -1,0 +1,1042 @@
+<title>Arbiter — Dashboard Prototype</title>
+<style>
+  /* ---------- Tokens ---------- */
+  :root {
+    --bg: #faf9f6;
+    --panel: #ffffff;
+    --panel-hover: #f5f3ee;
+    --ink: #26241f;
+    --muted: #6e6a61;
+    --faint: #8a8578;
+    --line: #e7e3da;
+    --line-strong: #d8d3c6;
+    --accent: #8a6d26;
+    --accent-soft: #f3ecdb;
+    --done: #2e7d4f;
+    --flight: #2563eb;
+    --blocked: #c0392b;
+    --todo: #8a8578;
+    --code-bg: #f4f2ec;
+    --shadow: 0 1px 2px rgba(38, 36, 31, 0.05), 0 4px 14px rgba(38, 36, 31, 0.05);
+
+    --serif: "Iowan Old Style", "Palatino", Georgia, ui-serif, serif;
+    --sans: ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15171c;
+      --panel: #1c1f26;
+      --panel-hover: #232732;
+      --ink: #e8e6e1;
+      --muted: #9a968c;
+      --faint: #767268;
+      --line: #2a2e37;
+      --line-strong: #363b47;
+      --accent: #c9a45c;
+      --accent-soft: #2a2618;
+      --done: #4caf7d;
+      --flight: #6a9bff;
+      --blocked: #e5675f;
+      --todo: #7e7a70;
+      --code-bg: #191c22;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #15171c;
+    --panel: #1c1f26;
+    --panel-hover: #232732;
+    --ink: #e8e6e1;
+    --muted: #9a968c;
+    --faint: #767268;
+    --line: #2a2e37;
+    --line-strong: #363b47;
+    --accent: #c9a45c;
+    --accent-soft: #2a2618;
+    --done: #4caf7d;
+    --flight: #6a9bff;
+    --blocked: #e5675f;
+    --todo: #7e7a70;
+    --code-bg: #191c22;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
+  }
+  :root[data-theme="light"] {
+    --bg: #faf9f6;
+    --panel: #ffffff;
+    --panel-hover: #f5f3ee;
+    --ink: #26241f;
+    --muted: #6e6a61;
+    --faint: #8a8578;
+    --line: #e7e3da;
+    --line-strong: #d8d3c6;
+    --accent: #8a6d26;
+    --accent-soft: #f3ecdb;
+    --done: #2e7d4f;
+    --flight: #2563eb;
+    --blocked: #c0392b;
+    --todo: #8a8578;
+    --code-bg: #f4f2ec;
+    --shadow: 0 1px 2px rgba(38, 36, 31, 0.05), 0 4px 14px rgba(38, 36, 31, 0.05);
+  }
+
+  /* ---------- Base ---------- */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 600; text-wrap: balance; margin: 0; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 28px 80px; }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding: 26px 0 18px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 28px;
+  }
+  .wordmark { display: flex; align-items: center; gap: 11px; color: var(--ink); }
+  .wordmark:hover { text-decoration: none; }
+  .seal { flex: none; display: block; color: var(--accent); }
+  .wordmark-text { display: flex; flex-direction: column; }
+  .wordmark-name {
+    font-family: var(--serif); font-size: 21px; font-weight: 600;
+    letter-spacing: 0.24em; text-transform: uppercase; line-height: 1.15;
+  }
+  .wordmark-tag { font-size: 12px; color: var(--muted); letter-spacing: 0.02em; }
+  .topbar-meta { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .capture-stamp { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .capture-stamp b { color: var(--ink); font-weight: 600; }
+  .legend { display: flex; gap: 12px; align-items: center; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); letter-spacing: 0.03em; }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.done { background: var(--done); }
+  .dot.in-flight { background: var(--flight); }
+  .dot.blocked { background: var(--blocked); }
+  .dot.todo { background: transparent; box-shadow: inset 0 0 0 1.5px var(--todo); }
+  .dot.logged { background: var(--line-strong); }
+
+  /* ---------- Status pills ---------- */
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
+    padding: 2px 9px 2px 7px; border-radius: 999px; white-space: nowrap;
+  }
+  .pill .dot { width: 7px; height: 7px; }
+  .pill.done    { color: var(--done);    background: color-mix(in srgb, var(--done) 11%, transparent); }
+  .pill.in-flight { color: var(--flight); background: color-mix(in srgb, var(--flight) 11%, transparent); }
+  .pill.blocked { color: var(--blocked); background: color-mix(in srgb, var(--blocked) 11%, transparent); }
+  .pill.todo    { color: var(--muted);   background: color-mix(in srgb, var(--todo) 14%, transparent); }
+
+  /* ---------- Tier 1: board ---------- */
+  .board-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+  .board-head h1 { font-size: 26px; }
+  .board-head .sub { color: var(--muted); font-size: 13.5px; }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 20px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    padding: 13px 16px 11px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink);
+  }
+  .card-head:hover { background: var(--panel-hover); text-decoration: none; }
+  .card-title { font-family: var(--serif); font-size: 16.5px; font-weight: 600; }
+  .card-count {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    background: color-mix(in srgb, var(--todo) 12%, transparent);
+    padding: 1px 8px; border-radius: 999px;
+  }
+  .card-items { list-style: none; margin: 0; padding: 6px 0; flex: 1; }
+  .card-item a {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 16px; color: var(--ink);
+  }
+  .card-item a:hover { background: var(--panel-hover); text-decoration: none; }
+  .card-item .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+  .card-item .when { font-family: var(--mono); font-size: 11px; color: var(--faint); flex: none; font-variant-numeric: tabular-nums; }
+  .card-more {
+    display: block; padding: 9px 16px 11px;
+    border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--muted);
+  }
+  .card-more:hover { background: var(--panel-hover); color: var(--accent); text-decoration: none; }
+  .card.ghost {
+    border-style: dashed; border-color: var(--line-strong);
+    background: transparent; box-shadow: none;
+    align-items: center; justify-content: center;
+    min-height: 180px; color: var(--faint);
+    text-align: center; padding: 24px; gap: 6px;
+  }
+  .card.ghost .plus { font-size: 22px; line-height: 1; color: var(--line-strong); }
+  .card.ghost .hint { font-size: 12.5px; max-width: 26ch; }
+
+  /* ---------- Tier 2: card view / lists ---------- */
+  .crumbs { font-size: 12.5px; color: var(--faint); margin: 2px 0 14px; }
+  .crumbs a { color: var(--muted); }
+  .crumbs .sep { margin: 0 6px; color: var(--line-strong); }
+  .view-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .view-head h1 { font-size: 24px; }
+  .view-sub { color: var(--muted); font-size: 13.5px; margin-bottom: 18px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .chip {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+    padding: 4px 12px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--line-strong); background: transparent; color: var(--muted);
+    font-family: var(--sans);
+  }
+  .chip:hover { background: var(--panel-hover); }
+  .chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .rows { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+  .row {
+    display: grid; grid-template-columns: 92px 1fr auto; gap: 14px; align-items: center;
+    padding: 12px 16px; color: var(--ink);
+    border-bottom: 1px solid var(--line);
+  }
+  .row:last-child { border-bottom: none; }
+  .row:hover { background: var(--panel-hover); text-decoration: none; }
+  .row.no-status { grid-template-columns: 1fr auto; }
+  .row .r-main { min-width: 0; }
+  .row .r-title { font-weight: 600; font-size: 14.5px; }
+  .row .r-summary { font-size: 13px; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .row .r-when { font-family: var(--mono); font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .rows-note { font-size: 12px; color: var(--faint); margin-top: 10px; }
+  .empty { padding: 28px 16px; color: var(--faint); text-align: center; font-size: 13.5px; }
+
+  /* ---------- Item view ---------- */
+  .item-meta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 8px 0 22px; }
+  .item-meta .when { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .item-meta .kind { font-family: var(--mono); font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
+  section.block { margin-bottom: 26px; }
+  .block-label {
+    font-size: 11.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--faint); margin-bottom: 9px; font-family: var(--sans);
+  }
+  .summary-text { max-width: 68ch; font-size: 15px; color: var(--ink); margin: 0; }
+
+  .checklist { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+  .check { display: flex; gap: 11px; padding: 10px 14px; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .check:last-child { border-bottom: none; }
+  .check .mark { font-family: var(--mono); font-size: 13px; font-weight: 700; flex: none; width: 18px; text-align: center; }
+  .check.done .mark { color: var(--done); }
+  .check.in-flight .mark { color: var(--flight); }
+  .check.blocked .mark { color: var(--blocked); }
+  .check.todo .mark { color: var(--todo); }
+  .check.done .label { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--line-strong); }
+  .check .c-main { min-width: 0; }
+  .check .blocker { display: block; font-size: 12.5px; color: var(--blocked); margin-top: 2px; }
+  .check .blocker a { color: var(--blocked); font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--blocked) 40%, transparent); }
+  .check .c-links { display: block; font-size: 12.5px; margin-top: 2px; }
+
+  .link-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .link-row { display: flex; align-items: baseline; gap: 10px; }
+  .tag {
+    font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); background: color-mix(in srgb, var(--todo) 12%, transparent);
+    padding: 1.5px 7px; border-radius: 4px; flex: none; min-width: 44px; text-align: center;
+  }
+  .link-row .lr-note { font-size: 12.5px; color: var(--faint); }
+
+  /* ---------- Doc view ---------- */
+  .doc-body { max-width: 70ch; }
+  .doc-body h2 { font-size: 19px; margin: 26px 0 10px; }
+  .doc-body h3 { font-size: 16px; margin: 20px 0 8px; }
+  .doc-body p { margin: 0 0 12px; }
+  .doc-body ul { margin: 0 0 12px; padding-left: 22px; }
+  .doc-body li { margin-bottom: 4px; }
+  .doc-body code { font-family: var(--mono); font-size: 0.86em; background: var(--code-bg); border: 1px solid var(--line); border-radius: 4px; padding: 0.5px 5px; }
+
+  /* ---------- Agent view ---------- */
+  details.agent { margin-top: 34px; border-top: 1px solid var(--line); padding-top: 14px; }
+  details.agent > summary {
+    cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+  }
+  details.agent > summary::-webkit-details-marker { display: none; }
+  details.agent > summary::before { content: "▸"; color: var(--faint); font-size: 11px; }
+  details.agent[open] > summary::before { content: "▾"; }
+  details.agent > summary:hover { color: var(--accent); }
+  details.agent > summary .path { color: var(--accent); }
+  .agent-file { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--code-bg); }
+  .agent-file .file-tab {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    padding: 7px 14px; border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .agent-file pre {
+    margin: 0; padding: 14px 16px; overflow-x: auto;
+    font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--ink);
+    tab-size: 2;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .card-item a, .row, .chip, .card-head { transition: background-color 120ms ease; }
+  }
+  @media (max-width: 560px) {
+    .wrap { padding: 0 16px 60px; }
+    .row { grid-template-columns: 1fr auto; }
+    .row .pill { display: none; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="topbar">
+    <a class="wordmark" href="#/" aria-label="Arbiter dashboard">
+      <svg class="seal" width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true">
+        <path d="M15 2.5 L26 8.75 L26 21.25 L15 27.5 L4 21.25 L4 8.75 Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        <circle cx="15" cy="15" r="3.2" fill="currentColor"/>
+      </svg>
+      <span class="wordmark-text">
+        <span class="wordmark-name">Arbiter</span>
+        <span class="wordmark-tag">Work, recorded. Impact, attested.</span>
+      </span>
+    </a>
+    <div class="topbar-meta">
+      <span class="capture-stamp" id="capture-stamp"></span>
+      <span class="legend" aria-label="Status legend">
+        <span><i class="dot done"></i>done</span>
+        <span><i class="dot in-flight"></i>in&#8209;flight</span>
+        <span><i class="dot blocked"></i>blocked</span>
+        <span><i class="dot todo"></i>todo</span>
+      </span>
+    </div>
+  </header>
+  <main id="app"></main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ================= Sample data =================
+     Shapes mirror the eventual on-disk markdown format:
+     DASHBOARD.md (tier 1 index), <dir>/<id>.md (tier 2 item),
+     <dir>/<id>/<doc>.md (tier 3 document). */
+
+  var CARDS = [
+    { type: "task",    label: "Tasks",    dir: "tasks",    extra: 7 },
+    { type: "goal",    label: "Goals",    dir: "goals",    extra: 0 },
+    { type: "meeting", label: "Meetings", dir: "meetings", extra: 0 },
+    { type: "journal", label: "Journal",  dir: "journal",  extra: 3 }
+  ];
+
+  var ITEMS = [
+    /* ---- Tasks ---- */
+    {
+      id: "stripe-webhook-verification", type: "task", status: "in-flight",
+      title: "Confirm live Stripe webhook delivery",
+      updated: "2026-07-03T09:10:00",
+      summary: "Live webhooks were provisioned via the new idempotent setup script (PR #73) and the Stripe account API default now points at dahlia. Remaining: passively watch the next production payment and confirm the payment_intent.succeeded event lands, creates the vendor_orders row, and triggers the order email.",
+      checklist: [
+        { label: "Write idempotent webhook provisioning script", status: "done",
+          links: [{ label: "PR #73", href: "https://github.com/makerbeealex/makerbee/pull/73" }] },
+        { label: "Point Stripe account API default to dahlia", status: "done" },
+        { label: "Watch next live payment for webhook delivery", status: "in-flight" },
+        { label: "Confirm vendor_orders row + order confirmation email", status: "todo" }
+      ],
+      artifacts: [
+        { kind: "pr",   label: "PR #73 — Add idempotent Stripe webhook provisioning script", href: "https://github.com/makerbeealex/makerbee/pull/73" },
+        { kind: "tool", label: "Stripe dashboard — webhook endpoints", href: "https://dashboard.stripe.com/webhooks" },
+        { kind: "code", label: "scripts/setup-stripe-webhooks.sh", href: "https://github.com/makerbeealex/makerbee/blob/main/medusa/scripts/setup-stripe-webhooks.sh" }
+      ],
+      docs: ["webhook-provisioning-notes"]
+    },
+    {
+      id: "archived-constraint-fix", type: "task", status: "blocked",
+      title: "Roll out archived-product status fix to prod",
+      updated: "2026-07-02T16:40:00",
+      summary: "Archiving a product 500s in production because the product_status_check constraint predates the 'archived' status. Root cause traced further: prod migrations never execute at all — Railway has no pre-deploy command and the Vercel drizzle tracking table falsely marks migration 0005 as applied. Constraint fix is drafted but blocked on the deploy-pipeline PR.",
+      checklist: [
+        { label: "Root-cause why the archive action 500s", status: "done",
+          links: [{ label: "Investigation", href: "#/doc/archived-constraint-investigation" }] },
+        { label: "Draft additive DDL for product_status_check", status: "done" },
+        { label: "Add Railway pre-deploy migrate command", status: "blocked",
+          blocker: { label: "PR #74", href: "https://github.com/makerbeealex/makerbee/pull/74", note: "blocked until PR #74 is merged" } },
+        { label: "Apply constraint fix + backfill migration tracker", status: "todo" },
+        { label: "Verify archive flow in prod admin", status: "todo" }
+      ],
+      artifacts: [
+        { kind: "pr", label: "PR #74 — Run migrations on Railway pre-deploy (open)", href: "https://github.com/makerbeealex/makerbee/pull/74" }
+      ],
+      docs: ["archived-constraint-investigation"]
+    },
+    {
+      id: "medusa-2155-upgrade", type: "task", status: "done",
+      title: "Medusa 2.15.5 upgrade — dependency effort",
+      updated: "2026-07-03T08:05:00",
+      summary: "Upgraded both workspaces to Medusa 2.15.5 in lockstep and closed the wider dependency-upgrade effort. Twelve PRs (#62–#73) landed across five phases: core bump, prod schema reconciliation, cleanup, docs refresh, and webhook infrastructure. Prod schema was ~1 year behind and reconciled with additive DDL plus a tracker backfill (22 → 183 entries).",
+      checklist: [
+        { label: "Phase 1–4: core @medusajs/* bump, lockstep pinning", status: "done" },
+        { label: "Reconcile prod schema (additive DDL + tracker backfill)", status: "done",
+          links: [{ label: "Report", href: "#/doc/prod-schema-reconciliation" }] },
+        { label: "Phase 5 + cleanup + docs refresh (PRs #69–#72)", status: "done" },
+        { label: "Provision Stripe live webhooks (PR #73)", status: "done" },
+        { label: "Close-out: quarterly blocked-majors re-check scheduled", status: "done" }
+      ],
+      artifacts: [
+        { kind: "pr",  label: "PR #62 — Phase 1: core Medusa bump", href: "https://github.com/makerbeealex/makerbee/pull/62" },
+        { kind: "pr",  label: "PR #69 — Docs refresh", href: "https://github.com/makerbeealex/makerbee/pull/69" },
+        { kind: "pr",  label: "PR #72 — Fix account.application.deauthorized handler", href: "https://github.com/makerbeealex/makerbee/pull/72" },
+        { kind: "pr",  label: "PR #73 — Stripe webhook provisioning script", href: "https://github.com/makerbeealex/makerbee/pull/73" },
+        { kind: "infra", label: "Railway service zonal-vitality — clean redeploy, /health 200", href: "https://railway.app" }
+      ],
+      docs: ["medusa-upgrade-plan", "prod-schema-reconciliation"]
+    },
+    {
+      id: "legacy-emailpass-cleanup", type: "task", status: "todo",
+      title: "Delete legacy emailpass admin identities",
+      updated: "2026-06-24T11:00:00",
+      summary: "Legacy admins still live in Medusa emailpass tables. PR #60 links pre-WorkOS accounts by verified email; once every admin is WorkOS-aligned, the legacy emailpass identities can be deleted. Deliberately deferred.",
+      checklist: [
+        { label: "Link pre-WorkOS accounts by verified email (PR #60)", status: "done",
+          links: [{ label: "PR #60", href: "https://github.com/makerbeealex/makerbee/pull/60" }] },
+        { label: "Confirm all admins signed in via WorkOS at least once", status: "todo" },
+        { label: "Delete legacy emailpass identities", status: "todo" }
+      ],
+      artifacts: [
+        { kind: "pr", label: "PR #60 — Link pre-WorkOS admin accounts", href: "https://github.com/makerbeealex/makerbee/pull/60" }
+      ],
+      docs: []
+    },
+    {
+      id: "lucide-phosphor-migration", type: "task", status: "todo",
+      title: "Migrate lucide-react icons to Phosphor",
+      updated: "2026-06-20T15:30:00",
+      summary: "Older storefront components still import lucide-react. Convention is @phosphor-icons/react; migrate opportunistically whenever an old component is touched. No dedicated sprint planned.",
+      checklist: [
+        { label: "Audit remaining lucide-react imports", status: "todo" },
+        { label: "Migrate as components are touched", status: "todo" }
+      ],
+      artifacts: [],
+      docs: []
+    },
+
+    /* ---- Goals ---- */
+    {
+      id: "q3-deploy-pipeline", type: "goal", status: "in-flight",
+      title: "Q3: migrations run on every prod deploy",
+      updated: "2026-07-02T17:00:00",
+      summary: "Close the gap that let prod schema drift a full year: every production deploy (Railway backend, Vercel storefront) must run pending migrations automatically, with a trustworthy tracking table. First concrete step is the Railway pre-deploy command in PR #74.",
+      checklist: [
+        { label: "Railway pre-deploy migrate command", status: "in-flight",
+          links: [{ label: "PR #74", href: "https://github.com/makerbeealex/makerbee/pull/74" }] },
+        { label: "Fix Vercel drizzle tracking-table false positives", status: "todo" },
+        { label: "Alert on schema drift between envs", status: "todo" }
+      ],
+      artifacts: [],
+      docs: ["archived-constraint-investigation"]
+    },
+    {
+      id: "vendor-payout-automation", type: "goal", status: "todo",
+      title: "Automate vendor payout reporting",
+      updated: "2026-06-28T10:00:00",
+      summary: "Vendors currently reconcile Stripe destination-charge payouts by hand. Goal: a payout report in the vendor portal driven by vendor_orders commission data, matched against Stripe transfer records.",
+      checklist: [
+        { label: "Spec payout report data model", status: "todo" },
+        { label: "Match vendor_orders to Stripe transfers", status: "todo" },
+        { label: "Portal UI in vendor dashboard", status: "todo" }
+      ],
+      artifacts: [],
+      docs: []
+    },
+    {
+      id: "dependency-health-cadence", type: "goal", status: "todo",
+      title: "Quarterly blocked-majors re-check",
+      updated: "2026-07-03T08:05:00",
+      summary: "Standing goal out of the upgrade effort: every quarter, re-check the majors that were blocked (Tailwind v4, Zod ecosystem, Jest) and decide upgrade vs. hold. Next check: early October 2026.",
+      checklist: [
+        { label: "October 2026 re-check", status: "todo" }
+      ],
+      artifacts: [],
+      docs: ["medusa-upgrade-plan"]
+    },
+
+    /* ---- Meetings ---- */
+    {
+      id: "standup-2026-07-03", type: "meeting",
+      title: "Standup — Jul 3",
+      updated: "2026-07-03T09:35:00",
+      summary: "Since last standup: merged PR #72 (deauth handler fix) and PR #73 (webhook provisioning script), provisioned Stripe live webhooks, pointed the account API default at dahlia, and closed out the Medusa 2.15.5 dependency effort. Flagged the archived-constraint rollout as blocked on PR #74.",
+      artifacts: [
+        { kind: "task", label: "Medusa 2.15.5 upgrade — closed", href: "#/item/medusa-2155-upgrade" },
+        { kind: "task", label: "Archived-constraint fix — blocked", href: "#/item/archived-constraint-fix" }
+      ],
+      docs: []
+    },
+    {
+      id: "design-review-vendor-onboarding", type: "meeting",
+      title: "Design review: vendor onboarding flow",
+      updated: "2026-07-01T14:00:00",
+      summary: "Reviewed the revised vendor onboarding wizard. Gave feedback on the WorkOS handoff step (drop the intermediate confirmation screen) and the Stripe Connect return-URL error states. Two follow-ups captured for the design team.",
+      artifacts: [
+        { kind: "doc", label: "Onboarding wizard — Figma", href: "https://figma.com" }
+      ],
+      docs: []
+    },
+    {
+      id: "customer-update-beta", type: "meeting",
+      title: "Customer update — MakerBee beta",
+      updated: "2026-06-30T11:00:00",
+      summary: "Monthly beta-vendor call. Demoed the reconciled admin orders page (BigNumber 500s gone) and the vendor dashboard stats. Vendors asked for payout reporting — feeds the vendor-payout-automation goal.",
+      artifacts: [
+        { kind: "goal", label: "Vendor payout automation", href: "#/item/vendor-payout-automation" }
+      ],
+      docs: []
+    },
+    {
+      id: "one-on-one-alex", type: "meeting",
+      title: "1:1 with Alex",
+      updated: "2026-06-27T15:30:00",
+      summary: "Walked through the prod schema reconciliation outcome and the deploy-pipeline gap. Agreed the Q3 goal is automating migrations on deploy; Railway Node 22 bump stays optional.",
+      artifacts: [],
+      docs: []
+    },
+    {
+      id: "sprint-planning-2026-06-26", type: "meeting",
+      title: "Sprint planning",
+      updated: "2026-06-26T10:00:00",
+      summary: "Planned the upgrade close-out sprint: Phase 5 PRs, docs refresh, webhook infrastructure. Stretch item: archived-constraint fix (now blocked on deploy pipeline).",
+      artifacts: [],
+      docs: []
+    },
+
+    /* ---- Journal ---- */
+    {
+      id: "migrations-never-ran", type: "journal",
+      title: "Why prod migrations never ran",
+      updated: "2026-06-26T18:20:00",
+      summary: "The archive-action 500 pulled a much bigger thread: production migrations have never executed. Railway has no pre-deploy command, and the Vercel drizzle tracking table falsely marks 0005 applied — so both sides silently skip. Full writeup in the investigation doc.",
+      artifacts: [
+        { kind: "doc", label: "Investigation — archived-constraint root cause", href: "#/doc/archived-constraint-investigation" }
+      ],
+      docs: []
+    },
+    {
+      id: "drizzle-tracker-gotcha", type: "journal",
+      title: "Drizzle tracking table can lie",
+      updated: "2026-06-25T21:00:00",
+      summary: "drizzle-kit's migration journal is only as truthful as the process that writes it. If a deploy pipeline runs push instead of migrate (or a human pushes once from a laptop), the tracker records migrations as applied that never ran against prod. Trust the schema, not the journal.",
+      artifacts: [],
+      docs: []
+    },
+    {
+      id: "bignumber-precision", type: "journal",
+      title: "BigNumber precision-0 orders fix",
+      updated: "2026-06-20T13:45:00",
+      summary: "Admin orders 500 traced to order_item raw_* JSONB fields carrying precision: 0 — Medusa requires >= 1. One UPDATE with jsonb_set across the eight raw_*_quantity fields fixed it; prevention rule added to CLAUDE.md.",
+      artifacts: [],
+      docs: []
+    },
+    {
+      id: "stripe-destination-charges", type: "journal",
+      title: "Destination charges — vendor lookup",
+      updated: "2026-06-18T16:10:00",
+      summary: "create-payment-intent resolves the Stripe destination account by walking vendor_products for the cart's items. Worth remembering: cart.vendorId stores the vendor handle, not vendors.id.",
+      artifacts: [],
+      docs: []
+    },
+    {
+      id: "bun-railway-notes", type: "journal",
+      title: "Bun on Railway — runtime notes",
+      updated: "2026-06-15T12:00:00",
+      summary: "Notes from testing the Medusa backend under Bun on Railway: build works with the standard bun install/bun build path; Node 22 image bump is available but optional. Keep bun everywhere locally per project convention.",
+      artifacts: [],
+      docs: []
+    }
+  ];
+
+  /* ---- Tier 3 documents ---- */
+  var DOCS = [
+    {
+      id: "medusa-upgrade-plan", itemId: "medusa-2155-upgrade", kind: "plan",
+      title: "Medusa 2.15.5 upgrade plan",
+      updated: "2026-06-12T09:00:00",
+      md: [
+        "## Goal",
+        "Bring both workspaces from 2.15.1 to **2.15.5** with all `@medusajs/*` packages pinned exact and in lockstep, then close the wider dependency-upgrade effort.",
+        "",
+        "## Phases",
+        "- **Phase 1 — Core bump**: upgrade `@medusajs/*` in `medusa/` and `storefront/` together; verify `bun sync` module links.",
+        "- **Phase 2 — Schema**: diff prod schema against 2.15.5 expectations before deploying anything.",
+        "- **Phase 3 — Integration tests**: `bun test:integration:http` green on the bumped branch.",
+        "- **Phase 4 — Prod reconciliation**: apply additive DDL for the ~1 year of drift; backfill the migration tracker.",
+        "- **Phase 5 — Close-out**: cleanup PRs, docs refresh, webhook infrastructure, quarterly re-check scheduled.",
+        "",
+        "## Constraints",
+        "- Never install `@mikro-orm/*` or `awilix` directly in `medusa/` — Medusa bundles them and duplicates crash metadata discovery.",
+        "- All deploys verified against `/health` on the Railway service before merging the next phase.",
+        "",
+        "## Blocked majors (hold until Q4 re-check)",
+        "- Tailwind v4 (storefront plugin ecosystem), Zod v4-adjacent tooling, Jest 31."
+      ].join("\n")
+    },
+    {
+      id: "prod-schema-reconciliation", itemId: "medusa-2155-upgrade", kind: "report",
+      title: "Prod schema reconciliation report",
+      updated: "2026-06-26T17:00:00",
+      md: [
+        "## Finding",
+        "Production schema was roughly **one year behind** the codebase — the `sync-links` migrations had never been applied. The migration tracker showed 22 entries where the codebase expected 183.",
+        "",
+        "## Remediation",
+        "- Generated additive-only DDL from the schema diff (no destructive statements).",
+        "- Applied DDL in a maintenance window; backfilled the tracker 22 → 183.",
+        "- Redeployed the `zonal-vitality` Railway service clean; `/health` returned 200.",
+        "",
+        "## Outcome",
+        "Resolved 2026-06-26. Follow-on: the deploy pipeline must run migrations automatically so this class of drift cannot recur — tracked under the Q3 deploy-pipeline goal."
+      ].join("\n")
+    },
+    {
+      id: "archived-constraint-investigation", itemId: "archived-constraint-fix", kind: "investigation",
+      title: "Archive failure — root cause",
+      updated: "2026-07-02T16:00:00",
+      md: [
+        "## Symptom",
+        "Archiving a product in prod admin returns a 500. Local and staging archive fine.",
+        "",
+        "## Root cause",
+        "The prod `product_status_check` constraint predates the `archived` status value — it allows only `draft`, `proposed`, `published`, `rejected`.",
+        "",
+        "## Why the migration never fixed it",
+        "- **Railway (backend)**: no pre-deploy command is configured, so Medusa migrations are never executed on deploy.",
+        "- **Vercel (storefront)**: the drizzle tracking table falsely marks migration `0005` as applied, so `drizzle-kit migrate` skips the constraint change.",
+        "",
+        "## Fix plan",
+        "- Additive DDL drafted: drop and recreate `product_status_check` including `archived`.",
+        "- Deploy-pipeline fix (PR #74) adds the Railway pre-deploy migrate command — the constraint rollout is **blocked until PR #74 merges** so the fix ships through the pipeline it is meant to prove."
+      ].join("\n")
+    },
+    {
+      id: "webhook-provisioning-notes", itemId: "stripe-webhook-verification", kind: "notes",
+      title: "Webhook provisioning notes",
+      updated: "2026-07-03T08:30:00",
+      md: [
+        "## Script behavior",
+        "`scripts/setup-stripe-webhooks.sh` is idempotent: it lists existing webhook endpoints, matches on URL + enabled events, and only creates what is missing. Safe to re-run on every environment.",
+        "",
+        "## Events subscribed",
+        "- `payment_intent.succeeded` — drives order creation via `processSuccessfulPayment`.",
+        "- `account.application.deauthorized` — vendor disconnect handling (handler fixed in PR #72 to look up the vendor by `event.account`).",
+        "",
+        "## Verification approach",
+        "Passive: no test charge against live mode. Watch the next organic production payment and confirm the delivery log in the Stripe dashboard, the `vendor_orders` row, and the confirmation email."
+      ].join("\n")
+    }
+  ];
+
+  /* ================= Helpers ================= */
+
+  var byId = {};
+  ITEMS.forEach(function (it) { byId[it.id] = it; });
+  var docById = {};
+  DOCS.forEach(function (d) { docById[d.id] = d; });
+  var cardByType = {};
+  CARDS.forEach(function (c) { cardByType[c.type] = c; });
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function itemsOf(type) {
+    return ITEMS.filter(function (it) { return it.type === type; })
+      .sort(function (a, b) { return a.updated < b.updated ? 1 : -1; });
+  }
+
+  var MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  function relTime(iso) {
+    var then = new Date(iso), now = new Date();
+    var mins = Math.max(0, Math.round((now - then) / 60000));
+    if (mins < 60) return mins + "m ago";
+    var hrs = Math.round(mins / 60);
+    if (hrs < 24) return hrs + "h ago";
+    var days = Math.round(hrs / 24);
+    if (days < 7) return days + "d ago";
+    return MONTHS[then.getMonth()] + " " + then.getDate();
+  }
+  function shortDate(iso) {
+    var d = new Date(iso);
+    return MONTHS[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
+  }
+  function isoDate(iso) { return iso.slice(0, 10); }
+
+  var STATUS_WORD = { done: "done", "in-flight": "in-flight", blocked: "blocked", todo: "todo" };
+  function pill(status) {
+    if (!status) return "";
+    return '<span class="pill ' + status + '"><i class="dot ' + status + '"></i>' + STATUS_WORD[status] + "</span>";
+  }
+  var CHECK_MARK = { done: "✓", "in-flight": "◐", blocked: "!", todo: "○" };
+  var MD_MARK = { done: "x", "in-flight": "~", blocked: "!", todo: " " };
+
+  /* ---- Tiny markdown renderer (headings, lists, bold, code, links) ---- */
+  function inlineMd(s) {
+    return esc(s)
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, '<a href="$2">$1</a>');
+  }
+  function renderMd(md) {
+    var out = [], list = null;
+    md.split("\n").forEach(function (line) {
+      if (/^- /.test(line)) {
+        if (!list) { list = []; }
+        list.push("<li>" + inlineMd(line.slice(2)) + "</li>");
+        return;
+      }
+      if (list) { out.push("<ul>" + list.join("") + "</ul>"); list = null; }
+      if (/^### /.test(line)) out.push("<h3>" + inlineMd(line.slice(4)) + "</h3>");
+      else if (/^## /.test(line)) out.push("<h2>" + inlineMd(line.slice(3)) + "</h2>");
+      else if (line.trim() === "") { /* paragraph break */ }
+      else out.push("<p>" + inlineMd(line) + "</p>");
+    });
+    if (list) out.push("<ul>" + list.join("") + "</ul>");
+    return out.join("\n");
+  }
+
+  /* ---- Agent-facing markdown generators ---- */
+  function itemPath(it) { return cardByType[it.type].dir + "/" + it.id + ".md"; }
+  function docPath(d) {
+    var parent = byId[d.itemId];
+    return cardByType[parent.type].dir + "/" + parent.id + "/" + d.id + ".md";
+  }
+
+  function itemMd(it) {
+    var L = [];
+    L.push("---");
+    L.push("id: " + it.id);
+    L.push("type: " + it.type);
+    L.push("title: " + it.title);
+    if (it.status) L.push("status: " + it.status);
+    L.push("updated: " + isoDate(it.updated));
+    L.push("---");
+    L.push("");
+    L.push("# " + it.title);
+    L.push("");
+    L.push("## Summary");
+    L.push(it.summary);
+    if (it.checklist && it.checklist.length) {
+      L.push("");
+      L.push("## Checklist");
+      it.checklist.forEach(function (c) {
+        L.push("- [" + MD_MARK[c.status] + "] " + c.label);
+        if (c.blocker) L.push("      blocked-by: [" + c.blocker.label + "](" + c.blocker.href + ")");
+        (c.links || []).forEach(function (ln) {
+          L.push("      see: [" + ln.label + "](" + ln.href + ")");
+        });
+      });
+    }
+    if (it.artifacts && it.artifacts.length) {
+      L.push("");
+      L.push("## Artifacts");
+      it.artifacts.forEach(function (a) {
+        L.push("- " + a.kind + ": [" + a.label + "](" + a.href + ")");
+      });
+    }
+    if (it.docs && it.docs.length) {
+      L.push("");
+      L.push("## Detail docs");
+      it.docs.forEach(function (id) {
+        var d = docById[id];
+        L.push("- [[" + d.id + "]] " + d.title + " (" + d.kind + ") -> " + docPath(d));
+      });
+    }
+    return L.join("\n");
+  }
+
+  function docMdRaw(d) {
+    var L = [];
+    L.push("---");
+    L.push("id: " + d.id);
+    L.push("kind: " + d.kind);
+    L.push("item: " + d.itemId);
+    L.push("updated: " + isoDate(d.updated));
+    L.push("---");
+    L.push("");
+    L.push("# " + d.title);
+    L.push("");
+    L.push(d.md);
+    return L.join("\n");
+  }
+
+  function dashboardMd() {
+    var L = [];
+    L.push("---");
+    L.push("updated: " + isoDate(ITEMS.reduce(function (m, it) { return it.updated > m ? it.updated : m; }, "")));
+    L.push("generator: arbiter");
+    L.push("---");
+    L.push("");
+    L.push("# Dashboard");
+    L.push("");
+    CARDS.forEach(function (card) {
+      var all = itemsOf(card.type);
+      var total = all.length + card.extra;
+      L.push("## " + card.label + " (" + total + ")");
+      all.slice(0, 5).forEach(function (it) {
+        var status = it.status ? "[" + it.status + "] " : "";
+        L.push("- " + status + it.title + " — " + isoDate(it.updated) + " -> " + itemPath(it));
+      });
+      if (total > Math.min(all.length, 5)) {
+        L.push("- +" + (total - Math.min(all.length, 5)) + " more in " + card.dir + "/");
+      }
+      L.push("");
+    });
+    return L.join("\n").trim();
+  }
+
+  function agentView(path, md) {
+    return (
+      '<details class="agent"><summary>View as agent — <span class="path">' + esc(path) + "</span></summary>" +
+      '<div class="agent-file"><div class="file-tab">' + esc(path) + "</div>" +
+      "<pre>" + esc(md) + "</pre></div></details>"
+    );
+  }
+
+  function crumbs(parts) {
+    return '<nav class="crumbs">' + parts.map(function (p) {
+      return p.href ? '<a href="' + p.href + '">' + esc(p.label) + "</a>" : esc(p.label);
+    }).join('<span class="sep">/</span>') + "</nav>";
+  }
+
+  /* ================= Views ================= */
+
+  function viewDashboard() {
+    var cardsHtml = CARDS.map(function (card) {
+      var all = itemsOf(card.type);
+      var shown = all.slice(0, 5);
+      var total = all.length + card.extra;
+      var more = total - shown.length;
+      var itemsHtml = shown.map(function (it) {
+        var dot = it.status ? '<i class="dot ' + it.status + '"></i>' : '<i class="dot logged"></i>';
+        return (
+          '<li class="card-item"><a href="#/item/' + it.id + '">' + dot +
+          '<span class="title">' + esc(it.title) + "</span>" +
+          '<span class="when">' + relTime(it.updated) + "</span></a></li>"
+        );
+      }).join("");
+      var moreHtml = more > 0
+        ? '<a class="card-more" href="#/card/' + card.type + '">+' + more + " more…</a>"
+        : '<a class="card-more" href="#/card/' + card.type + '">Open ' + card.label.toLowerCase() + " →</a>";
+      return (
+        '<article class="card">' +
+        '<a class="card-head" href="#/card/' + card.type + '">' +
+        '<span class="card-title">' + card.label + "</span>" +
+        '<span class="card-count">' + total + "</span></a>" +
+        '<ul class="card-items">' + itemsHtml + "</ul>" + moreHtml +
+        "</article>"
+      );
+    }).join("");
+
+    var ghost =
+      '<article class="card ghost" aria-hidden="true">' +
+      '<span class="plus">+</span>' +
+      '<span class="hint">Add a card type — Reviews, Incidents, Reading, anything worth attesting.</span>' +
+      "</article>";
+
+    return (
+      '<div class="board-head"><h1>Dashboard</h1>' +
+      '<span class="sub">Tier 1 — five most recent per card</span></div>' +
+      '<div class="board">' + cardsHtml + ghost + "</div>" +
+      agentView("DASHBOARD.md", dashboardMd())
+    );
+  }
+
+  function rowHtml(it, showStatus) {
+    var summary = it.summary.length > 180 ? it.summary.slice(0, 177) + "…" : it.summary;
+    return (
+      '<a class="row' + (showStatus ? "" : " no-status") + '" href="#/item/' + it.id + '">' +
+      (showStatus ? pill(it.status) : "") +
+      '<span class="r-main"><span class="r-title">' + esc(it.title) + "</span><br>" +
+      '<span class="r-summary">' + esc(summary) + "</span></span>" +
+      '<span class="r-when">' + relTime(it.updated) + "</span></a>"
+    );
+  }
+
+  function viewCard(type, filter) {
+    var card = cardByType[type];
+    if (!card) return viewNotFound();
+    var all = itemsOf(type);
+    var hasStatus = all.some(function (it) { return !!it.status; });
+    var filtered = filter && filter !== "all"
+      ? all.filter(function (it) { return it.status === filter; })
+      : all;
+    var total = all.length + card.extra;
+
+    var chipsHtml = "";
+    if (hasStatus) {
+      var opts = ["all", "done", "in-flight", "blocked", "todo"];
+      chipsHtml = '<div class="chips" role="group" aria-label="Filter by status">' + opts.map(function (o) {
+        var active = (filter || "all") === o ? " active" : "";
+        return '<button class="chip' + active + '" data-filter="' + o + '">' + (o === "all" ? "All" : STATUS_WORD[o]) + "</button>";
+      }).join("") + "</div>";
+    }
+
+    var rowsHtml = filtered.length
+      ? filtered.map(function (it) { return rowHtml(it, hasStatus); }).join("")
+      : '<div class="empty">Nothing with that status right now.</div>';
+
+    var note = card.extra > 0
+      ? '<p class="rows-note">' + card.extra + " older item" + (card.extra > 1 ? "s" : "") + " not included in this prototype’s sample data.</p>"
+      : "";
+
+    return (
+      crumbs([{ label: "Dashboard", href: "#/" }, { label: card.label }]) +
+      '<div class="view-head"><h1>' + card.label + "</h1>" +
+      '<span class="card-count">' + total + "</span></div>" +
+      '<p class="view-sub">Tier 2 — every ' + card.type + ", newest first</p>" +
+      chipsHtml +
+      '<div class="rows">' + rowsHtml + "</div>" + note
+    );
+  }
+
+  function checklistHtml(it) {
+    if (!it.checklist || !it.checklist.length) return "";
+    var lis = it.checklist.map(function (c) {
+      var blocker = "";
+      if (c.blocker) {
+        var seg = c.blocker.note.split(c.blocker.label);
+        blocker =
+          '<span class="blocker">' + esc(seg[0]) +
+          '<a href="' + c.blocker.href + '" target="_blank" rel="noopener">' + esc(c.blocker.label) + "</a>" +
+          esc(seg[1] || "") + "</span>";
+      }
+      var links = (c.links || []).map(function (ln) {
+        var ext = ln.href.charAt(0) === "#" ? "" : ' target="_blank" rel="noopener"';
+        return '<a href="' + ln.href + '"' + ext + ">" + esc(ln.label) + "</a>";
+      }).join(" · ");
+      return (
+        '<li class="check ' + c.status + '"><span class="mark" aria-hidden="true">' + CHECK_MARK[c.status] + "</span>" +
+        '<span class="c-main"><span class="label">' + esc(c.label) + "</span>" +
+        blocker + (links ? '<span class="c-links">see: ' + links + "</span>" : "") +
+        "</span></li>"
+      );
+    }).join("");
+    return '<section class="block"><div class="block-label">Checklist</div><ul class="checklist">' + lis + "</ul></section>";
+  }
+
+  function viewItem(id) {
+    var it = byId[id];
+    if (!it) return viewNotFound();
+    var card = cardByType[it.type];
+
+    var artifactsHtml = "";
+    if (it.artifacts && it.artifacts.length) {
+      artifactsHtml =
+        '<section class="block"><div class="block-label">Artifacts</div><ul class="link-rows">' +
+        it.artifacts.map(function (a) {
+          var ext = a.href.charAt(0) === "#" ? "" : ' target="_blank" rel="noopener"';
+          return '<li class="link-row"><span class="tag">' + esc(a.kind) + '</span><a href="' + a.href + '"' + ext + ">" + esc(a.label) + "</a></li>";
+        }).join("") + "</ul></section>";
+    }
+
+    var docsHtml = "";
+    if (it.docs && it.docs.length) {
+      docsHtml =
+        '<section class="block"><div class="block-label">Detail docs — Tier 3</div><ul class="link-rows">' +
+        it.docs.map(function (docId) {
+          var d = docById[docId];
+          return (
+            '<li class="link-row"><span class="tag">' + esc(d.kind) + '</span>' +
+            '<a href="#/doc/' + d.id + '">' + esc(d.title) + "</a>" +
+            '<span class="lr-note">' + relTime(d.updated) + "</span></li>"
+          );
+        }).join("") + "</ul></section>";
+    }
+
+    return (
+      crumbs([{ label: "Dashboard", href: "#/" }, { label: card.label, href: "#/card/" + card.type }, { label: it.title }]) +
+      "<h1>" + esc(it.title) + "</h1>" +
+      '<div class="item-meta">' + pill(it.status) +
+      '<span class="when">updated ' + shortDate(it.updated) + "</span>" +
+      '<span class="kind">' + card.type + "</span></div>" +
+      '<section class="block"><div class="block-label">Summary</div>' +
+      '<p class="summary-text">' + esc(it.summary) + "</p></section>" +
+      checklistHtml(it) + artifactsHtml + docsHtml +
+      agentView(itemPath(it), itemMd(it))
+    );
+  }
+
+  function viewDoc(id) {
+    var d = docById[id];
+    if (!d) return viewNotFound();
+    var parent = byId[d.itemId];
+    var card = cardByType[parent.type];
+    return (
+      crumbs([
+        { label: "Dashboard", href: "#/" },
+        { label: card.label, href: "#/card/" + card.type },
+        { label: parent.title, href: "#/item/" + parent.id },
+        { label: d.title }
+      ]) +
+      "<h1>" + esc(d.title) + "</h1>" +
+      '<div class="item-meta"><span class="tag">' + esc(d.kind) + "</span>" +
+      '<span class="when">updated ' + shortDate(d.updated) + "</span>" +
+      '<span class="kind">tier 3</span></div>' +
+      '<article class="doc-body">' + renderMd(d.md) + "</article>" +
+      agentView(docPath(d), docMdRaw(d))
+    );
+  }
+
+  function viewNotFound() {
+    return crumbs([{ label: "Dashboard", href: "#/" }]) +
+      '<h1>Not found</h1><p class="view-sub">Nothing recorded at this address. <a href="#/">Back to the dashboard.</a></p>';
+  }
+
+  /* ================= Router ================= */
+
+  var app = document.getElementById("app");
+  var currentFilter = "all";
+
+  function route() {
+    var hash = location.hash || "#/";
+    var parts = hash.slice(2).split("/").filter(Boolean); /* strip "#/" */
+    var html;
+    if (parts.length === 0) html = viewDashboard();
+    else if (parts[0] === "card" && parts[1]) { html = viewCard(parts[1], currentFilter); }
+    else if (parts[0] === "item" && parts[1]) html = viewItem(parts[1]);
+    else if (parts[0] === "doc" && parts[1]) html = viewDoc(parts[1]);
+    else html = viewNotFound();
+    app.innerHTML = html;
+    window.scrollTo(0, 0);
+
+    app.querySelectorAll(".chip").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        currentFilter = btn.getAttribute("data-filter");
+        route();
+      });
+    });
+  }
+
+  window.addEventListener("hashchange", function () {
+    if (!/^#\/card\//.test(location.hash)) currentFilter = "all";
+    route();
+  });
+
+  /* Last-capture stamp = most recent item update */
+  var latest = ITEMS.reduce(function (m, it) { return it.updated > m ? it.updated : m; }, "");
+  document.getElementById("capture-stamp").innerHTML = "last capture <b>" + relTime(latest) + "</b>";
+
+  route();
+})();
+</script>
