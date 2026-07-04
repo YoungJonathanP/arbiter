@@ -56,7 +56,9 @@ Arbiter is collaborative and headed toward being an application (likely a web ap
 
 ## Status
 
-**v0.1 — clickable visual prototype.** Open [`prototype/dashboard.html`](prototype/dashboard.html) in a browser. It is fully self-contained (no build, no network) and demonstrates:
+**v0.4 — contract spec + clickable visual prototype.** The agent contract is now real: [`arbiter-data/PROTOCOL.md`](arbiter-data/PROTOCOL.md) with per-card type schemas in [`arbiter-data/types/`](arbiter-data/types/), and the machine-read subset formally specified in [`docs/grammar.md`](docs/grammar.md).
+
+The visual prototype: Open [`prototype/dashboard.html`](prototype/dashboard.html) in a browser. It is fully self-contained (no build, no network) and demonstrates:
 
 - Tier 1 board with relevance ordering (active first, done last, 7-day age-off), truncation, and status legend
 - Tier 2 card lists with status filters and due dates, and item detail pages with time fields, checklists, blocker links, artifacts, and tier-3 links

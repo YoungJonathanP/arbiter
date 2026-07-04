@@ -12,11 +12,11 @@
 
 The machine-read surface of arbiter-data, specified precisely enough that a validator can pass/fail a directory. Everything later depends on this being stable.
 
-- [ ] **Write the real `PROTOCOL.md`** — promote the prototype's rendered mock into the authoritative agent contract: per-tier read/write rules, checklist mark semantics, tier-1 ordering rule, capture etiquette, conflict etiquette.
-- [ ] **Formal grammar for the machine-read subset** — frontmatter fields, checklist marks (`done / in-flight / blocked / todo / dropped / needs-review`), pointer lines (`<!-- arbiter:tier-N … -->`), tier-1 `-> path` entries. Everything outside the grammar is opaque prose, never parsed, never rewritten.
-- [ ] **Card-type schemas as data** — a `types/` directory (or PROTOCOL.md section): one schema per card (Tasks, Goals, Meetings, Journal, Accomplishments) declaring typed fields, defaults, and its relevance rule; a shared base type (slug, status, updated, private) via `extends`. Adding a card type = adding a schema file, not code.
-- [ ] **Stable checklist anchors** — comment-based anchor convention for checklist lines that are blocker-link targets, surviving reorder and rewording.
-- [ ] **Normalization rules, written down** — what defaults get filled, what is never touched (human prose), and the fixpoint requirement: normalize(normalize(x)) = normalize(x).
+- [x] **Write the real `PROTOCOL.md`** — done: [`arbiter-data/PROTOCOL.md`](../arbiter-data/PROTOCOL.md), promoted from the prototype's rendered mock: per-tier read/write rules, checklist mark semantics, tier-1 ordering rule, capture etiquette, conflict etiquette.
+- [x] **Formal grammar for the machine-read subset** — done: [`docs/grammar.md`](grammar.md) — frontmatter, checklist marks, pointer lines, tier-1 entries, plus liberal→canonical normalization table and the v0.5 conformance tests. Everything outside the grammar is opaque prose, never parsed, never rewritten.
+- [x] **Card-type schemas as data** — done: [`arbiter-data/types/`](../arbiter-data/types/) — one schema per card declaring typed fields, defaults, and its relevance rule; shared `_base` via `extends`. Adding a card type = adding a schema file, not code. (Decision: per-type slug forms — work items and accomplishments `-YYYYqN`, meetings `-YYYY-MM-DD`, journal free.)
+- [x] **Stable checklist anchors** — done: `<!-- ^anchor -->` trailing comments, referenced as `path#^anchor`; PROTOCOL.md#anchors.
+- [x] **Normalization rules, written down** — done: PROTOCOL.md#normalization + grammar §11; fixpoint requirement is conformance test 1.
 
 **Exit criteria:** a hand-written arbiter-data directory can be judged valid/invalid by reading the spec alone; two people (or two agents) reach the same verdict.
 
