@@ -52,7 +52,7 @@ Agents may operate Arbiter with full autonomy, so clean navigation and minimal c
 - **Slugs are immutable addresses** of the form `<base>-YYYYqN`; recurrence within ±2 quarters reopens the item, beyond that it's new. Items may carry `parent:`/`related:` frontmatter for epics and loose sibling references, reached only when the current item lacks the answer.
 - **Concurrent writes negotiate**: before writing, agents re-read (or heed the app's conflict signal) and merge intent with the altered state rather than overwriting.
 
-Arbiter is collaborative and headed toward being an application (likely a web app; Logseq's open-source local-first markdown architecture is a reference point) so that index regeneration, pagination, triage, and archive rolls happen programmatically instead of burdening agents.
+Arbiter is collaborative and headed toward being an application (likely a web app) so that index regeneration, pagination, triage, and archive rolls happen programmatically instead of burdening agents. Logseq remains the closest architectural reference, now on both sides of its 2026 split: its file-canonical version validates files-as-truth at Arbiter's scale, and its database version contributes the typed card-schema and parse-to-index patterns — see [`docs/logseq-investigation.md`](docs/logseq-investigation.md).
 
 ## Status
 
@@ -69,6 +69,8 @@ Arbiter is collaborative and headed toward being an application (likely a web ap
 Sample data is realistic (drawn from actual project work) so the design can be evaluated against real shapes of information.
 
 ## Roadmap (not yet built)
+
+Phased action items live in [`docs/launch-plan.md`](docs/launch-plan.md). In outline:
 
 - Real file storage + renderer (the prototype embeds sample data)
 - Capture pipeline: automatic capture from agent sessions, plus a "note for later" inbox for work done outside agentic workflows

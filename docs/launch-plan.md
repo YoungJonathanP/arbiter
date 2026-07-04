@@ -1,0 +1,76 @@
+# Launch plan
+
+*Drafted 2026-07-04, alongside [`logseq-investigation.md`](logseq-investigation.md), whose adoptions this plan sequences.*
+
+**Launch (v1.0) means:** Arbiter is Jonathan's daily driver — a real `arbiter-data/` directory tracked in git, operated every working day by both agents (file tools) and the web renderer, that can produce a review-ready attestation report on demand. Not launched: hosting for other users, real-time collaboration, mobile.
+
+**Ordering principle:** the file contract before the code, the headless core before the app, dogfooding before polish. Agents are the primary client, so Arbiter becomes usable at v0.5 (files + CLI) — the renderer is a lens added afterward, not the gate.
+
+---
+
+## v0.4 — The contract (spec, no code)
+
+The machine-read surface of arbiter-data, specified precisely enough that a validator can pass/fail a directory. Everything later depends on this being stable.
+
+- [ ] **Write the real `PROTOCOL.md`** — promote the prototype's rendered mock into the authoritative agent contract: per-tier read/write rules, checklist mark semantics, tier-1 ordering rule, capture etiquette, conflict etiquette.
+- [ ] **Formal grammar for the machine-read subset** — frontmatter fields, checklist marks (`done / in-flight / blocked / todo / dropped / needs-review`), pointer lines (`<!-- arbiter:tier-N … -->`), tier-1 `-> path` entries. Everything outside the grammar is opaque prose, never parsed, never rewritten.
+- [ ] **Card-type schemas as data** — a `types/` directory (or PROTOCOL.md section): one schema per card (Tasks, Goals, Meetings, Journal, Accomplishments) declaring typed fields, defaults, and its relevance rule; a shared base type (slug, status, updated, private) via `extends`. Adding a card type = adding a schema file, not code.
+- [ ] **Stable checklist anchors** — comment-based anchor convention for checklist lines that are blocker-link targets, surviving reorder and rewording.
+- [ ] **Normalization rules, written down** — what defaults get filled, what is never touched (human prose), and the fixpoint requirement: normalize(normalize(x)) = normalize(x).
+
+**Exit criteria:** a hand-written arbiter-data directory can be judged valid/invalid by reading the spec alone; two people (or two agents) reach the same verdict.
+
+## v0.5 — Headless core: library + CLI *(usable milestone — dogfooding starts)*
+
+- [ ] **Stack decision** — recommendation: TypeScript throughout; `better-sqlite3` for the derived index; one package with `core/` (parser, normalizer, validator, index, queries) and `cli/`. The renderer consumes the same core later.
+- [ ] **Parser + validator** implementing the v0.4 grammar. Property tests: parse → normalize → parse fixpoint; index rebuilt from files twice is identical (index is a cache, never truth).
+- [ ] **Derived index + queries** — relevance ordering, overdue flagging, 7-day age-off, 14-day needs-review, pagination windows. All tier-1/tier-2 logic is queries over the index; anything the queries produce that matters (e.g. needs-review status) is written back to markdown.
+- [ ] **CLI**: `arbiter validate`, `arbiter regen` (DASHBOARD.md), `arbiter triage`, `arbiter query`, `arbiter new <type>`.
+- [ ] **Seed real data** — convert the prototype's sample data into a real `arbiter-data/`, then replace samples with Jonathan's actual current work.
+- [ ] **Dogfood from day one** — Arbiter's own development is tracked in arbiter-data; agent sessions in this repo read PROTOCOL.md and keep items current.
+
+**Exit criteria:** a week of real use with agents + CLI only; DASHBOARD.md regenerates correctly; validator green in CI.
+
+## v0.6 — Renderer (web app MVP)
+
+- [ ] **Local web server over the data directory** rendering all three tiers; replaces the embedded-sample prototype. Reuses the prototype's visual design and the core library's parser — one normalization path shared with the CLI (Logseq's clobbering bugs came from having two).
+- [ ] **File watcher + reconcile** — agents keep writing files while the app runs; the app re-indexes on change.
+- [ ] **Write path with conflict signal** — app edits (status ticks, checklist marks) go through the core normalizer; concurrent-write detection via content hash so agents can negotiate as PROTOCOL.md prescribes.
+- [ ] **View-as-agent toggle** over the real files (carried over from the prototype).
+
+**Exit criteria:** the prototype is deleted; daily use happens in the renderer with agents writing underneath it.
+
+## v0.7 — Capture pipeline
+
+- [ ] **Agent-session capture** — a Claude Code skill/hook so sessions in any repo append journal entries and update touched items in arbiter-data without being asked.
+- [ ] **"Note for later" inbox** — lowest-friction capture for work done outside agentic workflows; inbox items normalize into typed items on next agent touch.
+- [ ] **Raw-entry reconciliation** — hand-added entries at any tier (including DASHBOARD.md) survive regeneration as stubs, per the README's human-friendliness guarantee.
+
+**Exit criteria:** a normal work week produces a substantially complete journal with no manual bookkeeping.
+
+## v0.8 — Attestation & search
+
+- [ ] **Accomplishment promotion flow** — turn done items with evidence into review-ready accomplishment records; flag evidence-less candidates.
+- [ ] **Timeline / impact report generation** — date-ranged attestation reports (markdown out) built from accomplishments + journal; the review-season deliverable.
+- [ ] **Search** across all tiers (index-backed; likely SQLite FTS).
+- [ ] **Archive rolls** — quarterly roll of aged-out items, keeping the hot set small and tier-1 fast.
+
+**Exit criteria:** `arbiter report --since 2026-01-01` produces something usable in an actual performance review.
+
+## v1.0 — Hardening & launch
+
+- [ ] **Concurrency tests** — two writers (agent + app) on the same item; negotiation path exercised, no silent loss.
+- [ ] **History safety net** — auto-commit of arbiter-data on regen/triage so every programmatic mutation is one `git revert` from undone.
+- [ ] **Install story** — one command to set up the CLI + renderer against a fresh or existing data directory.
+- [ ] **Docs pass** — README, PROTOCOL.md, and type schemas current; investigation and plan docs archived as decided/done.
+
+---
+
+## Cross-cutting decisions (settle in v0.4–v0.5, revisit only with cause)
+
+| Decision | Recommendation |
+|---|---|
+| Canonical store | Markdown files, permanently; index is disposable cache (see investigation) |
+| Stack | TypeScript; better-sqlite3 index; plain local web server — no hosted deployment in v1 |
+| History | Git is the transaction log; no bespoke journal format |
+| Collaboration boundary | Turn-based negotiation only; RTC is explicitly out of scope until the files-as-truth boundary is actually hit |
