@@ -14,9 +14,11 @@ Progressive disclosure is the core design principle: each tier holds just enough
 
 | Tier | View | Contains |
 |------|------|----------|
-| **1 — Dashboard** | Card board (Tasks, Goals, Meetings, Journal — extensible) | Up to 5 most recent items per card, status dot + title + recency. One screen answers "where did I leave off?" |
-| **2 — Card / Item** | Full item list per card; item detail page | High-level summary, status checklist (done / in-flight / blocked-with-blocker-link / todo), hyperlinked artifacts (PRs, design docs, Figma, Confluence), links into tier 3 |
+| **1 — Dashboard** | Card board (Tasks, Goals, Meetings, Journal, Accomplishments — extensible) | Up to 5 items per card ordered by relevance: active items (blocked / in-flight / todo) by recency first, done items last, aged off the card 7 days after completion. One screen answers "what have I done recently, what should I do next?" |
+| **2 — Card / Item** | Full item list per card; item detail page | High-level summary, time fields (started / estimated completion / due, with overdue flagging), status checklist (done / in-flight / blocked-with-blocker-link / todo), hyperlinked artifacts (PRs, design docs, Figma, Confluence), links into tier 3 |
 | **3 — Documents** | Rendered detail documents | Plans, investigations, reports, notes — the full-context material |
+
+Status colors: **todo = white**, **done = green**, **in-flight = blue**, **blocked = red**. Accomplishments are records rather than work items — review-ready impact statements linked back to their source items and artifacts, built for performance-review inspection by humans and agents alike.
 
 ## Storage model
 
@@ -24,7 +26,8 @@ Markdown files on disk with YAML frontmatter. Agents read and write them with pl
 
 ```
 arbiter-data/
-├── DASHBOARD.md                  # tier 1: index, ≤5 recent per card
+├── PROTOCOL.md                   # agent contract: per-tier navigation + repair rules
+├── DASHBOARD.md                  # tier 1: index, ≤5 relevant per card
 ├── tasks/
 │   ├── <task-slug>.md            # tier 2: frontmatter + summary + checklist + artifacts
 │   └── <task-slug>/
@@ -32,17 +35,30 @@ arbiter-data/
 │       └── investigation.md
 ├── goals/
 ├── meetings/
-└── journal/
+├── journal/
+└── accomplishments/
 ```
+
+## Agent protocol (top-level priority)
+
+Agents may operate Arbiter with full autonomy, so clean navigation and minimal context are load-bearing:
+
+- **`PROTOCOL.md` is read once** — it defines how to read/write each tier, checklist mark semantics, the tier-1 ordering rule, and capture etiquette.
+- **Every other file ends with a single scoped pointer line** (`<!-- arbiter:tier-2 · PROTOCOL.md#tier-2 · … -->`) naming its tier and the section that governs it. Instructions are never repeated per file, so visiting an item never loads navigation guidance meant for its neighbors.
+- **Pointers are the only navigation**: tier-1 entries end with `-> path`; tier-2 links tier-3 docs explicitly. An agent opens exactly the files its current tier points to — no bulk reads.
+- **Human entries are always valid**: a title plus prose is an acceptable file. Missing fields get defaults (status=todo, type from directory, updated from mtime), and the next agent touch normalizes the entry without ever discarding human prose. Humans get friendliness; agents get safeguards.
 
 ## Status
 
-**v0 — clickable visual prototype.** Open [`prototype/dashboard.html`](prototype/dashboard.html) in a browser. It is fully self-contained (no build, no network) and demonstrates:
+**v0.1 — clickable visual prototype.** Open [`prototype/dashboard.html`](prototype/dashboard.html) in a browser. It is fully self-contained (no build, no network) and demonstrates:
 
-- Tier 1 board with recent-5 truncation and status legend
-- Tier 2 card lists with status filters, and item detail pages with checklists, blocker links, artifacts, and tier-3 links
-- Tier 3 rendered documents
-- A **"View as agent"** toggle on every view, showing the exact markdown file an agent would read/write for that view
+- Tier 1 board with relevance ordering (active first, done last, 7-day age-off), truncation, and status legend
+- Tier 2 card lists with status filters and due dates, and item detail pages with time fields, checklists, blocker links, artifacts, and tier-3 links
+- Tier 3 rendered documents, plus the rendered `PROTOCOL.md` agent contract
+- A collapsible left sidebar for fast navigation across all cards and items
+- An Accomplishments card with review-ready impact statements linked to source items
+- A raw human entry ("payout report ask") showing the pending-normalization safeguard
+- A **"View as agent"** toggle on every view, showing the exact markdown file — including its scoped protocol pointer line — an agent would read/write for that view
 
 Sample data is realistic (drawn from actual project work) so the design can be evaluated against real shapes of information.
 
