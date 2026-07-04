@@ -18,7 +18,9 @@ Progressive disclosure is the core design principle: each tier holds just enough
 | **2 — Card / Item** | Full item list per card; item detail page | High-level summary, time fields (started / estimated completion / due, with overdue flagging), status checklist (done / in-flight / blocked-with-blocker-link / todo), hyperlinked artifacts (PRs, design docs, Figma, Confluence), links into tier 3 |
 | **3 — Documents** | Rendered detail documents | Plans, investigations, reports, notes — the full-context material |
 
-Status colors: **todo = white**, **done = green**, **in-flight = blue**, **blocked = red**. Accomplishments are records rather than work items — review-ready impact statements linked back to their source items and artifacts, built for performance-review inspection by humans and agents alike.
+Status colors: **todo = white**, **done = green**, **in-flight = blue**, **blocked = red**, **dropped = orange** (terminal, excluded from accomplishments), **needs-review = purple** (set by triage when an item goes untouched 14+ days). Tier-2 lists paginate at 10; the journal is date-segmented — its card shows the 5 most recent entries and its tier-2 page shows the last week first, older entries behind pagination.
+
+Accomplishments are records rather than work items — review-ready impact statements built for performance-review inspection by humans and agents alike. **Evidence is the driver**: every accomplishment carries verifiable links (merged PRs, published docs) under its Evidence section. Journal and meeting entries carry a subtle **private** toggle; agents skip private items unless explicitly directed.
 
 ## Storage model
 
@@ -46,7 +48,11 @@ Agents may operate Arbiter with full autonomy, so clean navigation and minimal c
 - **`PROTOCOL.md` is read once** — it defines how to read/write each tier, checklist mark semantics, the tier-1 ordering rule, and capture etiquette.
 - **Every other file ends with a single scoped pointer line** (`<!-- arbiter:tier-2 · PROTOCOL.md#tier-2 · … -->`) naming its tier and the section that governs it. Instructions are never repeated per file, so visiting an item never loads navigation guidance meant for its neighbors.
 - **Pointers are the only navigation**: tier-1 entries end with `-> path`; tier-2 links tier-3 docs explicitly. An agent opens exactly the files its current tier points to — no bulk reads.
-- **Human entries are always valid**: a title plus prose is an acceptable file. Missing fields get defaults (status=todo, type from directory, updated from mtime), and the next agent touch normalizes the entry without ever discarding human prose. Humans get friendliness; agents get safeguards.
+- **Human entries are always valid**: a title plus prose is an acceptable file. Missing fields get defaults (status=todo, type from directory, updated from mtime), and the next agent touch normalizes the entry without ever discarding human prose. Humans may also hand-add entries at any tier — including the dashboard index — and the app reconciles them into item stubs on regeneration. Humans get friendliness; agents get safeguards.
+- **Slugs are immutable addresses** of the form `<base>-YYYYqN`; recurrence within ±2 quarters reopens the item, beyond that it's new. Items may carry `parent:`/`related:` frontmatter for epics and loose sibling references, reached only when the current item lacks the answer.
+- **Concurrent writes negotiate**: before writing, agents re-read (or heed the app's conflict signal) and merge intent with the altered state rather than overwriting.
+
+Arbiter is collaborative and headed toward being an application (likely a web app; Logseq's open-source local-first markdown architecture is a reference point) so that index regeneration, pagination, triage, and archive rolls happen programmatically instead of burdening agents.
 
 ## Status
 

@@ -16,6 +16,8 @@
     --done: #2e7d4f;
     --flight: #2563eb;
     --blocked: #c0392b;
+    --dropped: #c65a11;
+    --needs-review: #7c3aed;
     --todo: #ffffff;
     --todo-ring: #cfcabd;
     --todo-mark: #b3ada0;
@@ -64,6 +66,8 @@
     --done: #4caf7d;
     --flight: #6a9bff;
     --blocked: #e5675f;
+    --dropped: #ef8e4d;
+    --needs-review: #a78bfa;
     --todo: #ffffff;
     --todo-ring: rgba(255, 255, 255, 0.28);
     --todo-mark: #f0eee8;
@@ -85,6 +89,8 @@
     --done: #2e7d4f;
     --flight: #2563eb;
     --blocked: #c0392b;
+    --dropped: #c65a11;
+    --needs-review: #7c3aed;
     --todo: #ffffff;
     --todo-ring: #cfcabd;
     --todo-mark: #b3ada0;
@@ -143,6 +149,8 @@
   .dot.done { background: var(--done); }
   .dot.in-flight { background: var(--flight); }
   .dot.blocked { background: var(--blocked); }
+  .dot.dropped { background: var(--dropped); }
+  .dot.needs-review { background: var(--needs-review); }
   .dot.todo { background: var(--todo); box-shadow: 0 0 0 1px var(--todo-ring); }
   .dot.logged { background: var(--line-strong); }
 
@@ -156,6 +164,8 @@
   .pill.done    { color: var(--done);    background: color-mix(in srgb, var(--done) 11%, transparent); }
   .pill.in-flight { color: var(--flight); background: color-mix(in srgb, var(--flight) 11%, transparent); }
   .pill.blocked { color: var(--blocked); background: color-mix(in srgb, var(--blocked) 11%, transparent); }
+  .pill.dropped { color: var(--dropped); background: color-mix(in srgb, var(--dropped) 11%, transparent); }
+  .pill.needs-review { color: var(--needs-review); background: color-mix(in srgb, var(--needs-review) 11%, transparent); }
   .pill.todo    { color: #57534a; background: var(--todo); box-shadow: inset 0 0 0 1px var(--todo-ring); }
   .pill.todo .dot { box-shadow: inset 0 0 0 1.5px #b3ada0; }
 
@@ -270,6 +280,15 @@
   }
   .chip:hover { background: var(--panel-hover); }
   .chip.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .chip[disabled] { opacity: 0.4; pointer-events: none; }
+  .pager { display: flex; gap: 12px; align-items: center; margin-top: 14px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .priv-btn {
+    font-family: var(--mono); font-size: 11px; cursor: pointer;
+    padding: 1.5px 8px; border-radius: 4px;
+    border: 1px solid var(--line-strong); background: transparent; color: var(--faint);
+  }
+  .priv-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .priv-btn.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
   .rows { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
   .row {
     display: grid; grid-template-columns: 92px 1fr auto; gap: 14px; align-items: center;
@@ -394,6 +413,8 @@
         <span><i class="dot in-flight"></i>in&#8209;flight</span>
         <span><i class="dot blocked"></i>blocked</span>
         <span><i class="dot todo"></i>todo</span>
+        <span><i class="dot dropped"></i>dropped</span>
+        <span><i class="dot needs-review"></i>needs&nbsp;review</span>
       </span>
     </div>
   </header>
@@ -413,7 +434,7 @@
      <dir>/<id>.md (tier 2 item), <dir>/<id>/<doc>.md (tier 3 document). */
 
   var CARDS = [
-    { type: "task",           label: "Tasks",           dir: "tasks",           extra: 6 },
+    { type: "task",           label: "Tasks",           dir: "tasks",           extra: 5 },
     { type: "goal",           label: "Goals",           dir: "goals",           extra: 0 },
     { type: "meeting",        label: "Meetings",        dir: "meetings",        extra: 0 },
     { type: "journal",        label: "Journal",         dir: "journal",         extra: 3 },
@@ -458,6 +479,7 @@
       artifacts: [
         { kind: "pr", label: "PR #74 — Run migrations on Railway pre-deploy (open)", href: "https://github.com/makerbeealex/makerbee/pull/74" }
       ],
+      related: ["q3-deploy-pipeline"],
       docs: ["archived-constraint-investigation"]
     },
     {
@@ -499,13 +521,24 @@
       docs: []
     },
     {
-      id: "lucide-phosphor-migration", type: "task", status: "todo",
+      id: "lucide-phosphor-migration", type: "task", status: "needs-review",
       title: "Migrate lucide-react icons to Phosphor",
       updated: "2026-06-20T15:30:00",
-      summary: "Older storefront components still import lucide-react. Convention is @phosphor-icons/react; migrate opportunistically whenever an old component is touched. No dedicated sprint planned.",
+      summary: "Older storefront components still import lucide-react. Convention is @phosphor-icons/react; migrate opportunistically whenever an old component is touched. No dedicated sprint planned. Untouched for 14 days — triage flagged it needs-review on Jul 4; resolve by updating, dropping, or re-scoping.",
       checklist: [
         { label: "Audit remaining lucide-react imports", status: "todo" },
         { label: "Migrate as components are touched", status: "todo" }
+      ],
+      artifacts: [],
+      docs: []
+    },
+    {
+      id: "railway-node22-upgrade-2026q3", type: "task", status: "dropped",
+      title: "Railway Node 22 image bump",
+      updated: "2026-07-01T10:20:00",
+      summary: "Optional Node 22 base-image bump for the Railway backend, evaluated during the upgrade effort. Dropped: the backend runs under Bun so the Node version is irrelevant to the image, and the bump adds redeploy risk with no user-visible benefit. The slug carries year+quarter (2026q3) per the identity rule — if this resurfaces within ±2 quarters it reopens this item; later, it becomes a new one.",
+      checklist: [
+        { label: "Evaluate Node 22 image against Bun runtime", status: "done" }
       ],
       artifacts: [],
       docs: []
@@ -597,7 +630,7 @@
       docs: []
     },
     {
-      id: "one-on-one-alex", type: "meeting",
+      id: "one-on-one-alex", type: "meeting", visibility: "private",
       title: "1:1 with Alex",
       updated: "2026-06-27T15:30:00",
       summary: "Walked through the prod schema reconciliation outcome and the deploy-pipeline gap. Agreed the Q3 goal is automating migrations on deploy; Railway Node 22 bump stays optional.",
@@ -807,24 +840,36 @@
      one-line scoped pointer back to the relevant section. */
   var PROTOCOL_BODY = [
     "## Scope rule",
-    "Work at exactly one tier at a time. Every file ends with a one-line `arbiter:` comment naming its tier and the protocol section that governs it — that line plus this file is all the navigation instruction you need. **Never bulk-read sibling items**; open only files this tier points to.",
+    "Arbiter is collaborative: humans and agents both read and write these files, at any tier. Work at exactly one tier at a time. Every file ends with a one-line `arbiter:` comment naming its tier and the protocol section that governs it — that line plus this file is all the navigation instruction you need. **Never bulk-read sibling items**; open only files this tier points to.",
+    "",
+    "## Statuses",
+    "- `todo` (white) · `in-flight` (blue) · `blocked` (red) · `done` (green) · `dropped` (orange) · `needs-review` (purple).",
+    "- `done` and `dropped` are terminal. Dropped work is excluded from accomplishments.",
+    "- `needs-review` is set by **triage**: at session start or on a status check, any item untouched for 14+ days that is not terminal gets `status: needs-review`. Resolve it by updating, dropping, or re-scoping the item.",
     "",
     "## Tier 1 — DASHBOARD.md (orientation)",
     "- Purpose: answer \"what happened recently, what should happen next\" in one read.",
+    "- The index is regenerated programmatically by the app; its `generated:` frontmatter says how fresh it is. Treat a stale index as advisory and trust the item files.",
+    "- Humans may hand-add entries here (or at any tier). On the next regeneration the app reconciles hand-added index lines into item stubs for normalization — never delete them.",
     "- Each entry line ends with `-> <path>`. That path is the only file to open next.",
-    "- Ordering within a card: active items (blocked, in-flight, todo) by recency first; **done items last**, and dropped from the card 7 days after completion (they remain in the tier-2 directory).",
-    "- DASHBOARD.md is an index: never edit entries by hand — regenerate it from the item files.",
+    "- Ordering within a card: active items by recency first; **terminal items (done/dropped) last**, aged off the card 7 days after closing (they remain in the tier-2 directory).",
     "",
     "## Tier 2 — <dir>/<slug>.md (manage one item)",
     "- Purpose: everything needed to continue or update one item: Summary, Checklist, Artifacts, Detail docs.",
+    "- **Slugs are immutable addresses** in the form `<base>-YYYYqN` (year + quarter of creation). Titles may change freely; slugs never do. Before creating an item, search the directory for the same base slug within ±2 quarters — if found, update that item; outside the window it is a new item.",
+    "- Directories page at 10 items by recency. Search the current page first; request older pages only when needed. Journal is date-segmented, one entry per file: the card shows the 5 most recent, tier 2 shows the last 7 days first with older entries behind pagination.",
     "- Checklist marks: `[ ]` todo, `[~]` in-flight, `[!]` blocked (must carry a `blocked-by:` link), `[x]` done. Update marks in place.",
-    "- Time fields live in frontmatter: `started`, `eta` (estimated completion), `due` — all `YYYY-MM-DD`. Update `updated` on every touch.",
-    "- Follow a `Detail docs` pointer **only** when the summary and checklist do not answer the question.",
-    "- Do not open sibling items unless this file links to them.",
+    "- **Blocked items**: on opening an item with a `[!]` mark, check the blocker link's state first and update the mark before any other work.",
+    "- Time fields in frontmatter: `started`, `eta` (estimated completion), `due` — all `YYYY-MM-DD`. Update `updated` on every touch.",
+    "- Relations: `parent:` and `related:` frontmatter may name other slugs (epics, siblings, loose references). Reach for a related item **only** when the current item lacks the answer.",
+    "- Follow a `Detail docs` pointer only when the summary and checklist do not answer the question. Do not open unlinked siblings.",
     "",
     "## Tier 3 — <dir>/<slug>/<doc>.md (full context)",
     "- Purpose: plans, investigations, reports, notes — the deep material.",
     "- Read-mostly. Append new findings with a dated heading; do not rewrite history.",
+    "",
+    "## Concurrent changes",
+    "- Before writing, re-read the file (or heed the app's conflict signal). If it changed since your read, the altered context is relayed to you: merge your intent with the new state — negotiate, never blind-overwrite.",
     "",
     "## Human entries (repair rules)",
     "- Humans may drop minimal entries: a title line plus prose is a **valid** file. Do not reject or block on format.",
@@ -832,18 +877,26 @@
     "- On first touch, normalize: add frontmatter, infer status from the prose, move the original text under `## Summary` **unchanged**, and add `normalized: <date>` to frontmatter.",
     "- Never discard human prose. Repair, then continue with the actual task.",
     "",
+    "## Visibility",
+    "- Journal and meeting entries may carry `visibility: private`. Skip private items unless the user explicitly directs you to them, and never quote them into other contexts.",
+    "",
     "## Accomplishments (attestation)",
-    "- When an item reaches `done`, distill a one-line, review-ready accomplishment into `accomplishments/` — impact first, mechanism second — with artifact links back to the source item, PRs, and docs.",
-    "- Accomplishment files are records, not work items: they carry no status and are never reopened.",
+    "- **Evidence is the driver**: every accomplishment must carry at least one verifiable link — a merged PR, a published doc, a dashboard — under `## Evidence`. Impact first, mechanism second, numbers where they exist.",
+    "- When an item reaches `done`, distill a one-line, review-ready accomplishment into `accomplishments/` with evidence links back to the source item.",
+    "- Accomplishment files are records, not work items: no status, never reopened. They age into the archive like everything else but are **never deleted** — reports search the archive.",
+    "",
+    "## Archive",
+    "- Quarterly roll: terminal items and journal entries older than a quarter move to `archive/YYYY-qN/` with paths preserved. Recency-limited views never search the archive; reports and explicit lookups do.",
     "",
     "## Capture etiquette",
-    "- Prefer updating an existing item over creating a near-duplicate; search the card directory by slug first.",
-    "- Every externally useful link (PR, design doc, dashboard) belongs in `## Artifacts` of the item it serves, not in prose."
+    "- Capture is cheap: one line appended now beats a perfect entry never written. Structure is added lazily on the next touch.",
+    "- Prefer updating an existing item over creating a near-duplicate; apply the slug rule above first.",
+    "- Every externally useful link (PR, design doc, dashboard) belongs in `## Artifacts` (or `## Evidence`) of the item it serves, not in prose."
   ].join("\n");
 
   function protocolRaw() {
     return [
-      "---", "id: protocol", "version: 0.2", "---", "",
+      "---", "id: protocol", "version: 0.3", "---", "",
       "# Arbiter agent protocol", "", PROTOCOL_BODY
     ].join("\n");
   }
@@ -876,14 +929,15 @@
   /* Tier-1 relevance ordering: active items by recency first, done items
      last; done items age off the card 7 days after completion. */
   var WEEK_MS = 7 * 24 * 3600 * 1000;
+  var TERMINAL = { done: true, dropped: true };
   function recentForCard(type) {
     var now = Date.now();
     var all = itemsOf(type).filter(function (it) {
-      return it.status !== "done" || (now - new Date(it.updated).getTime()) <= WEEK_MS;
+      return !TERMINAL[it.status] || (now - new Date(it.updated).getTime()) <= WEEK_MS;
     });
-    var active = all.filter(function (it) { return it.status !== "done"; });
-    var done = all.filter(function (it) { return it.status === "done"; });
-    return active.concat(done);
+    var active = all.filter(function (it) { return !TERMINAL[it.status]; });
+    var closed = all.filter(function (it) { return !!TERMINAL[it.status]; });
+    return active.concat(closed);
   }
 
   var MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -914,7 +968,7 @@
       new Date(it.due + "T23:59:59").getTime() < Date.now();
   }
 
-  var STATUS_WORD = { done: "done", "in-flight": "in-flight", blocked: "blocked", todo: "todo" };
+  var STATUS_WORD = { done: "done", "in-flight": "in-flight", blocked: "blocked", todo: "todo", dropped: "dropped", "needs-review": "needs review" };
   function pill(status) {
     if (!status) return "";
     return '<span class="pill ' + status + '"><i class="dot ' + status + '"></i>' + STATUS_WORD[status] + "</span>";
@@ -965,6 +1019,8 @@
     if (it.started) L.push("started: " + it.started);
     if (it.eta) L.push("eta: " + it.eta);
     if (it.due) L.push("due: " + it.due);
+    if (it.visibility) L.push("visibility: " + it.visibility);
+    if (it.related && it.related.length) L.push("related: " + it.related.join(", "));
     L.push("updated: " + isoDate(it.updated));
     L.push("---");
     L.push("");
@@ -985,7 +1041,7 @@
     }
     if (it.artifacts && it.artifacts.length) {
       L.push("");
-      L.push("## Artifacts");
+      L.push(it.type === "accomplishment" ? "## Evidence" : "## Artifacts");
       it.artifacts.forEach(function (a) {
         L.push("- " + a.kind + ": [" + a.label + "](" + a.href + ")");
       });
@@ -1025,6 +1081,7 @@
     L.push("---");
     L.push("updated: " + isoDate(ITEMS.reduce(function (m, it) { return it.updated > m ? it.updated : m; }, "")));
     L.push("generator: arbiter");
+    L.push("generated: " + new Date().toISOString());
     L.push("protocol: PROTOCOL.md");
     L.push("---");
     L.push("");
@@ -1074,7 +1131,7 @@
       var itemsHtml = shown.map(function (it) {
         var dot = it.status ? '<i class="dot ' + it.status + '"></i>' : '<i class="dot logged"></i>';
         return (
-          '<li class="card-item' + (it.status === "done" ? " is-done" : "") + '"><a href="#/item/' + it.id + '">' + dot +
+          '<li class="card-item' + (TERMINAL[it.status] ? " is-done" : "") + '"><a href="#/item/' + it.id + '">' + dot +
           '<span class="title">' + esc(it.title) + "</span>" +
           '<span class="when">' + relTime(it.updated) + "</span></a></li>"
         );
@@ -1121,7 +1178,8 @@
     );
   }
 
-  function viewCard(type, filter) {
+  var PAGE_SIZE = 10;
+  function viewCard(type, filter, page) {
     var card = cardByType[type];
     if (!card) return viewNotFound();
     var all = itemsOf(type);
@@ -1133,28 +1191,58 @@
 
     var chipsHtml = "";
     if (hasStatus) {
-      var opts = ["all", "done", "in-flight", "blocked", "todo"];
+      var opts = ["all", "done", "in-flight", "blocked", "todo", "dropped", "needs-review"];
       chipsHtml = '<div class="chips" role="group" aria-label="Filter by status">' + opts.map(function (o) {
         var active = (filter || "all") === o ? " active" : "";
         return '<button class="chip' + active + '" data-filter="' + o + '">' + (o === "all" ? "All" : STATUS_WORD[o]) + "</button>";
       }).join("") + "</div>";
     }
 
-    var rowsHtml = filtered.length
-      ? filtered.map(function (it) { return rowHtml(it, hasStatus); }).join("")
-      : '<div class="empty">Nothing with that status right now.</div>';
+    /* Pagination: 10 per page. Journal is date-segmented — page 1 is the
+       last 7 days, older entries follow in pages of 10. */
+    var pageItems, pageCount, pageLabel = "", emptyMsg = "Nothing with that status right now.";
+    if (type === "journal" && (!filter || filter === "all")) {
+      var cutoff = Date.now() - WEEK_MS;
+      var recent = filtered.filter(function (it) { return new Date(it.updated).getTime() >= cutoff; });
+      var older = filtered.filter(function (it) { return new Date(it.updated).getTime() < cutoff; });
+      pageCount = 1 + Math.ceil(older.length / PAGE_SIZE);
+      page = Math.min(Math.max(1, page || 1), pageCount);
+      pageItems = page === 1 ? recent : older.slice((page - 2) * PAGE_SIZE, (page - 1) * PAGE_SIZE);
+      pageLabel = page === 1 ? "this week" : "older";
+      if (page === 1) emptyMsg = "No entries in the last 7 days.";
+    } else {
+      pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+      page = Math.min(Math.max(1, page || 1), pageCount);
+      pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    }
+
+    var rowsHtml = pageItems.length
+      ? pageItems.map(function (it) { return rowHtml(it, hasStatus); }).join("")
+      : '<div class="empty">' + emptyMsg + "</div>";
+
+    var pager = "";
+    if (pageCount > 1) {
+      pager =
+        '<div class="pager">' +
+        '<button class="chip" data-page="' + (page - 1) + '"' + (page <= 1 ? " disabled" : "") + ">← Newer</button>" +
+        "<span>Page " + page + " of " + pageCount + (pageLabel ? " — " + pageLabel : "") + "</span>" +
+        '<button class="chip" data-page="' + (page + 1) + '"' + (page >= pageCount ? " disabled" : "") + ">Older →</button></div>";
+    }
 
     var note = card.extra > 0
       ? '<p class="rows-note">' + card.extra + " older item" + (card.extra > 1 ? "s" : "") + " not included in this prototype’s sample data.</p>"
       : "";
+    var sub = type === "journal"
+      ? "Tier 2 — this week first; older entries in pages of " + PAGE_SIZE
+      : "Tier 2 — every " + card.type + ", newest first, " + PAGE_SIZE + " per page";
 
     return (
       crumbs([{ label: "Dashboard", href: "#/" }, { label: card.label }]) +
       '<div class="view-head"><h1>' + card.label + "</h1>" +
       '<span class="card-count">' + total + "</span></div>" +
-      '<p class="view-sub">Tier 2 — every ' + card.type + ", newest first</p>" +
+      '<p class="view-sub">' + sub + "</p>" +
       chipsHtml +
-      '<div class="rows">' + rowsHtml + "</div>" + note
+      '<div class="rows">' + rowsHtml + "</div>" + pager + note
     );
   }
 
@@ -1199,7 +1287,7 @@
     var artifactsHtml = "";
     if (it.artifacts && it.artifacts.length) {
       artifactsHtml =
-        '<section class="block"><div class="block-label">Artifacts</div><ul class="link-rows">' +
+        '<section class="block"><div class="block-label">' + (it.type === "accomplishment" ? "Evidence" : "Artifacts") + '</div><ul class="link-rows">' +
         it.artifacts.map(function (a) {
           var ext = a.href.charAt(0) === "#" ? "" : ' target="_blank" rel="noopener"';
           return '<li class="link-row"><span class="tag">' + esc(a.kind) + '</span><a href="' + a.href + '"' + ext + ">" + esc(a.label) + "</a></li>";
@@ -1220,6 +1308,25 @@
         }).join("") + "</ul></section>";
     }
 
+    var relatedHtml = "";
+    if (it.related && it.related.length) {
+      relatedHtml =
+        '<section class="block"><div class="block-label">Related items</div><ul class="link-rows">' +
+        it.related.map(function (rid) {
+          var r = byId[rid];
+          if (!r) return "";
+          return (
+            '<li class="link-row"><span class="tag">' + esc(r.type) + '</span>' +
+            '<a href="#/item/' + r.id + '">' + esc(r.title) + "</a>" +
+            (r.status ? '<span class="lr-note">' + STATUS_WORD[r.status] + "</span>" : "") + "</li>"
+          );
+        }).join("") + "</ul></section>";
+    }
+
+    var privBtn = (it.type === "journal" || it.type === "meeting")
+      ? '<button class="priv-btn' + (it.visibility === "private" ? " on" : "") + '" data-item="' + it.id + '" title="Agents skip private items unless explicitly directed">private: ' + (it.visibility === "private" ? "on" : "off") + "</button>"
+      : "";
+
     var humanFlag = it.humanRaw
       ? '<span class="human-flag">human entry · pending normalization</span>'
       : "";
@@ -1233,10 +1340,10 @@
       '<div class="item-meta">' + pill(it.status) +
       '<span class="when">updated ' + shortDate(it.updated) + "</span>" +
       timeMetaHtml(it) +
-      '<span class="kind">' + card.type + "</span>" + humanFlag + "</div>" +
+      '<span class="kind">' + card.type + "</span>" + privBtn + humanFlag + "</div>" +
       '<section class="block"><div class="block-label">Summary</div>' +
       '<p class="summary-text">' + esc(it.summary) + "</p>" + humanNote + "</section>" +
-      checklistHtml(it) + artifactsHtml + docsHtml +
+      checklistHtml(it) + artifactsHtml + docsHtml + relatedHtml +
       agentView(itemPath(it), itemMd(it))
     );
   }
@@ -1267,7 +1374,7 @@
       crumbs([{ label: "Dashboard", href: "#/" }, { label: "Agent protocol" }]) +
       "<h1>Agent protocol</h1>" +
       '<div class="item-meta"><span class="tag">protocol</span>' +
-      '<span class="when">v0.2</span>' +
+      '<span class="when">v0.3</span>' +
       '<span class="kind">contract</span></div>' +
       '<p class="view-sub">The one file an agent reads in full. Every other file carries a single scoped pointer line back to its section — tier instructions live here once, never repeated per file.</p>' +
       '<article class="doc-body">' + renderMd(PROTOCOL_BODY) + "</article>" +
@@ -1336,13 +1443,14 @@
 
   var app = document.getElementById("app");
   var currentFilter = "all";
+  var currentPage = 1;
 
   function route() {
     var hash = location.hash || "#/";
     var parts = hash.slice(2).split("/").filter(Boolean); /* strip "#/" */
     var html;
     if (parts.length === 0) html = viewDashboard();
-    else if (parts[0] === "card" && parts[1]) { html = viewCard(parts[1], currentFilter); }
+    else if (parts[0] === "card" && parts[1]) { html = viewCard(parts[1], currentFilter, currentPage); }
     else if (parts[0] === "item" && parts[1]) html = viewItem(parts[1]);
     else if (parts[0] === "doc" && parts[1]) html = viewDoc(parts[1]);
     else if (parts[0] === "protocol") html = viewProtocol();
@@ -1351,9 +1459,23 @@
     renderNav(hash);
     window.scrollTo(0, 0);
 
-    app.querySelectorAll(".chip").forEach(function (btn) {
+    app.querySelectorAll(".chip[data-filter]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         currentFilter = btn.getAttribute("data-filter");
+        currentPage = 1;
+        route();
+      });
+    });
+    app.querySelectorAll(".chip[data-page]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        currentPage = parseInt(btn.getAttribute("data-page"), 10) || 1;
+        route();
+      });
+    });
+    app.querySelectorAll(".priv-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var it = byId[btn.getAttribute("data-item")];
+        if (it) it.visibility = it.visibility === "private" ? null : "private";
         route();
       });
     });
@@ -1361,6 +1483,7 @@
 
   window.addEventListener("hashchange", function () {
     if (!/^#\/card\//.test(location.hash)) currentFilter = "all";
+    currentPage = 1;
     route();
   });
 
