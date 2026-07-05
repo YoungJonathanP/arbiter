@@ -50,13 +50,13 @@ Agents may operate Arbiter with full autonomy, so clean navigation and minimal c
 - **Pointers are the only navigation**: tier-1 entries end with `-> path`; tier-2 links tier-3 docs explicitly. An agent opens exactly the files its current tier points to — no bulk reads.
 - **Human entries are always valid**: a title plus prose is an acceptable file. Missing fields get defaults (status=todo, type from directory, updated from mtime), and the next agent touch normalizes the entry without ever discarding human prose. Humans may also hand-add entries at any tier — including the dashboard index — and the app reconciles them into item stubs on regeneration. Humans get friendliness; agents get safeguards.
 - **Slugs are immutable addresses** of the form `<base>-YYYYqN`; recurrence within ±2 quarters reopens the item, beyond that it's new. Items may carry `parent:`/`related:` frontmatter for epics and loose sibling references, reached only when the current item lacks the answer.
-- **Concurrent writes negotiate**: before writing, agents re-read (or heed the app's conflict signal) and merge intent with the altered state rather than overwriting.
+- **Concurrent writes are arbitrated**: uncontended edits apply directly (write-then-verify); contended or high-stakes edits stage as intent-carrying proposal files in `<id>.staged/` and are merged by confluent resolution rules — no silent loss at any writer count. See [`docs/arbitration.md`](docs/arbitration.md).
 
 Arbiter is collaborative and headed toward being an application (likely a web app) so that index regeneration, pagination, triage, and archive rolls happen programmatically instead of burdening agents. Logseq remains the closest architectural reference, now on both sides of its 2026 split: its file-canonical version validates files-as-truth at Arbiter's scale, and its database version contributes the typed card-schema and parse-to-index patterns — see [`docs/logseq-investigation.md`](docs/logseq-investigation.md).
 
 ## Status
 
-**v0.4 — contract spec + clickable visual prototype.** The agent contract is now real: [`arbiter-data/PROTOCOL.md`](arbiter-data/PROTOCOL.md) with per-card type schemas in [`arbiter-data/types/`](arbiter-data/types/), and the machine-read subset formally specified in [`docs/grammar.md`](docs/grammar.md).
+**v0.4 — contract spec + clickable visual prototype.** The agent contract is now real: [`arbiter-data/PROTOCOL.md`](arbiter-data/PROTOCOL.md) with per-card type schemas in [`arbiter-data/types/`](arbiter-data/types/), the machine-read subset formally specified in [`docs/grammar.md`](docs/grammar.md), and N-writer-safe concurrency specced as the arbitration protocol ([`docs/arbitration.md`](docs/arbitration.md)). The contract phase is closed; next up is the v0.5 headless core (see [`docs/launch-plan.md`](docs/launch-plan.md)).
 
 The visual prototype: Open [`prototype/dashboard.html`](prototype/dashboard.html) in a browser. It is fully self-contained (no build, no network) and demonstrates:
 

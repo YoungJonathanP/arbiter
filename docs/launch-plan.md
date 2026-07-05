@@ -8,7 +8,9 @@
 
 ---
 
-## v0.4 — The contract (spec, no code)
+## v0.4 — The contract (spec, no code) ✅
+
+*Phase closed 2026-07-05 (commits `e5f17e6` + v0.4.1). The exit-criteria test is carried into v0.5 as its first item, where the test directory does double duty as validator fixture and dogfood seed.*
 
 The machine-read surface of arbiter-data, specified precisely enough that a validator can pass/fail a directory. Everything later depends on this being stable.
 
@@ -16,16 +18,18 @@ The machine-read surface of arbiter-data, specified precisely enough that a vali
 - [x] **Formal grammar for the machine-read subset** — done: [`docs/grammar.md`](grammar.md) — frontmatter, checklist marks, pointer lines, tier-1 entries, plus liberal→canonical normalization table and the v0.5 conformance tests. Everything outside the grammar is opaque prose, never parsed, never rewritten.
 - [x] **Card-type schemas as data** — done: [`arbiter-data/types/`](../arbiter-data/types/) — one schema per card declaring typed fields, defaults, and its relevance rule; shared `_base` via `extends`. Adding a card type = adding a schema file, not code. (Decision: per-type slug forms — work items and accomplishments `-YYYYqN`, meetings `-YYYY-MM-DD`, journal free.)
 - [x] **Stable checklist anchors** — done: `<!-- ^anchor -->` trailing comments, referenced as `path#^anchor`; PROTOCOL.md#anchors.
-- [x] **Normalization rules, written down** — done: PROTOCOL.md#normalization + grammar §11; fixpoint requirement is conformance test 1.
+- [x] **Normalization rules, written down** — done: PROTOCOL.md#normalization + grammar §12; fixpoint requirement is conformance test 1.
+- [x] **Arbitration protocol** — added 2026-07-05 after spec review: [`docs/arbitration.md`](arbitration.md) (decision record), PROTOCOL.md#arbitration, grammar §9. Staged-on-contention: contended/high-stakes writes become intent-carrying proposal files in `<id>.staged/`; second writer owns the merge; semantic resolution rules; 24h orphan sweep.
 
-**Exit criteria:** a hand-written arbiter-data directory can be judged valid/invalid by reading the spec alone; two people (or two agents) reach the same verdict.
+**Exit criteria:** a hand-written arbiter-data directory can be judged valid/invalid by reading the spec alone; two people (or two agents) reach the same verdict. *→ Carried into v0.5 (first item below) so the test artifacts feed directly into the validator and seed.*
 
 ## v0.5 — Headless core: library + CLI *(usable milestone — dogfooding starts)*
 
+- [ ] **Spec-readability test** (v0.4 exit criterion, carried) — hand-write a small arbiter-data directory from the spec alone, including one `.staged/` conflict with two overlapping proposals; two independent readers (fresh agent sessions, spec only) judge validity and arbitrate the conflict. Divergent verdicts are spec bugs to fix before code. The directory becomes the validator's fixture corpus and the dogfood seed.
 - [ ] **Stack decision** — recommendation: TypeScript throughout; `better-sqlite3` for the derived index; one package with `core/` (parser, normalizer, validator, index, queries) and `cli/`. The renderer consumes the same core later.
 - [ ] **Parser + validator** implementing the v0.4 grammar. Property tests: parse → normalize → parse fixpoint; index rebuilt from files twice is identical (index is a cache, never truth).
 - [ ] **Derived index + queries** — relevance ordering, overdue flagging, 7-day age-off, 14-day needs-review, pagination windows. All tier-1/tier-2 logic is queries over the index; anything the queries produce that matters (e.g. needs-review status) is written back to markdown.
-- [ ] **CLI**: `arbiter validate`, `arbiter regen` (DASHBOARD.md), `arbiter triage`, `arbiter query`, `arbiter new <type>`.
+- [ ] **CLI**: `arbiter validate`, `arbiter regen` (DASHBOARD.md), `arbiter triage`, `arbiter query`, `arbiter new <type>`, `arbiter arbitrate <item>` (apply/resolve staged proposals), plus `arbiter write --if-match <hash>` as the CAS write path.
 - [ ] **Seed real data** — convert the prototype's sample data into a real `arbiter-data/`, then replace samples with Jonathan's actual current work.
 - [ ] **Dogfood from day one** — Arbiter's own development is tracked in arbiter-data; agent sessions in this repo read PROTOCOL.md and keep items current.
 
@@ -59,7 +63,7 @@ The machine-read surface of arbiter-data, specified precisely enough that a vali
 
 ## v1.0 — Hardening & launch
 
-- [ ] **Concurrency tests** — two writers (agent + app) on the same item; negotiation path exercised, no silent loss.
+- [ ] **Concurrency tests** — N writers (agents + app) on one item: write-then-verify, rebase-retry, sticky staging, and confluent arbitration exercised end-to-end against grammar gates 6–7; no silent loss under any interleaving.
 - [ ] **History safety net** — auto-commit of arbiter-data on regen/triage so every programmatic mutation is one `git revert` from undone.
 - [ ] **Install story** — one command to set up the CLI + renderer against a fresh or existing data directory.
 - [ ] **Docs pass** — README, PROTOCOL.md, and type schemas current; investigation and plan docs archived as decided/done.

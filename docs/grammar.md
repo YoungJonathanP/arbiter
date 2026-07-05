@@ -5,7 +5,7 @@
 ## 1. Conformance
 
 - **Writers** (agents following PROTOCOL.md, the normalizer, the renderer, regeneration) MUST emit the *canonical form* — exactly the productions below.
-- **Readers** MUST accept canonical form, SHOULD accept the liberal variants in §10, and MUST treat any unrecognized content as opaque.
+- **Readers** MUST accept canonical form, SHOULD accept the liberal variants in §12, and MUST treat any unrecognized content as opaque.
 - **Normalization** maps liberal input to canonical form and is **idempotent**: `normalize(normalize(f)) = normalize(f)`.
 - **Round-trip**: for any conforming file, `parse(serialize(parse(f))) = parse(f)`, and for a canonical file `serialize(parse(f)) = f`.
 - Encoding: UTF-8, LF line endings, exactly one trailing newline. Two non-ASCII terminals are load-bearing: the em dash `—` (U+2014) in entry lines and the middle dot `·` (U+00B7) in pointer lines.
@@ -106,12 +106,13 @@ dashboard    ::= frontmatter blank "# Dashboard" eol blank card-section+ pointer
 card-section ::= "## " card-label " (" count ")" eol entry* overflow? blank
 card-label   ::= text                                      (* no "(" *)
 count        ::= digit+
-entry        ::= "- " ("[" status "] ")? entry-title " — " date " -> " rel-path eol
+entry        ::= "- " ("[" status "] ")? staged-flag? entry-title " — " date " -> " rel-path eol
+staged-flag  ::= "(" count " staged) "
 overflow     ::= "- +" count " more in " item-dir "/" eol
 entry-title  ::= text
 ```
 
-Disambiguation: an entry line is split at its **last** `" -> "` (path), then at the **last** `" — "` before that (date). `entry-title` may therefore contain either sequence. Work items carry the `[status]` prefix; record types (meetings, journal, accomplishments) omit it. Dashboard frontmatter keys: `updated` (datetime), `generator`, `generated` (datetime), `protocol`.
+Disambiguation: an entry line is split at its **last** `" -> "` (path), then at the **last** `" — "` before that (date); a `staged-flag` is recognized only immediately after the status bracket. `entry-title` may therefore contain any of these sequences. The `staged-flag` marks items with unresolved proposals (§9). Work items carry the `[status]` prefix; record types (meetings, journal, accomplishments) omit it. Dashboard frontmatter keys: `updated` (datetime), `generator`, `generated` (datetime), `protocol`.
 
 ## 8. Detail documents (tier 3)
 
@@ -123,7 +124,34 @@ dated-heading::= "## " date " — " text eol
 
 Doc frontmatter keys: `id` (doc-id), `kind` (doc-kind), `item` (item-id), `updated` (datetime). Appends go under a `dated-heading`; everything else in `doc-body` is opaque.
 
-## 9. Type schemas (`types/*.md`)
+## 9. Proposal files (staging)
+
+Contended or high-stakes writes land as proposal files (PROTOCOL.md#arbitration): one write, one file, in a hidden sibling staging directory of the item. Distinct filenames are the collision-free primitive; creating a proposal touches nothing contended.
+
+```ebnf
+staged-dir    ::= item-dir "/" item-id ".staged"
+proposal-path ::= staged-dir "/" date "-" author-slug "-" base-slug ".md"
+author-slug   ::= base-slug                                (* unique per writing session *)
+proposal-file ::= frontmatter blank title-line blank prose-block pointer-line eol
+
+op            ::= set-op | mark-op | append-op
+set-op        ::= "set: " key " = " scalar
+mark-op       ::= "mark: " ("^" anchor | quoted-text) " = " mark-name
+mark-name     ::= "todo" | "in-flight" | "blocked" | "done"
+append-op     ::= "append: " section-name " · " text
+```
+
+Frontmatter keys: `id` (the filename stem), `item` (item-id), `base` (`sha256:` + hex of the item version read), `author` (session or human label), `updated` (datetime), `ops` (YAML sequence of op strings). A `mark-op` addresses a step by `^anchor` when one exists, otherwise by exact quoted step text.
+
+Structural constraints:
+
+- The prose body (the **intent** — why, with evidence links) is REQUIRED: an op without a why cannot be arbitrated.
+- The `author-slug` MUST be unique to the writing session (e.g. carry a session suffix): filename uniqueness is chosen at write time, never checked-then-created — concurrent proposers must be unable to race for one name.
+- A `mark-op` setting `blocked` MUST cite a blocker link in the body; it becomes the step's `blocked-by:` continuation when applied.
+- An `append-op`'s `section-name` MUST be a known section of the item's type.
+- Applied proposals are deleted (git history is the audit trail). Unresolved proposals either remain staged with the item flagged `needs-review`, or are swept per PROTOCOL.md#arbitration.
+
+## 10. Type schemas (`types/*.md`)
 
 Frontmatter here allows one level of nesting for `fields` and `sections`:
 
@@ -140,18 +168,18 @@ kind-value   ::= "work-item" | "record"
 
 `extends` resolution is single-inheritance to `_base`; a type's effective field set is base fields ∪ own fields, own fields winning on collision. `relevance` names one of two ordering strategies: `active-first` (non-terminal by `updated` desc, then terminal, 7-day age-off from tier 1) and `recent-first` (by `date` desc).
 
-## 10. Pointer lines
+## 11. Pointer lines
 
 ```ebnf
 pointer-line ::= "<!-- arbiter:" scope " · PROTOCOL.md#" section " · " reminder " -->"
-scope        ::= "tier-1" | "tier-2" | "tier-3" | "types"
+scope        ::= "tier-1" | "tier-2" | "tier-3" | "types" | "staged"
 section      ::= base-slug                                 (* a heading anchor in PROTOCOL.md *)
 reminder     ::= text                                      (* no "-->" *)
 ```
 
 Exactly one pointer line per file (except `PROTOCOL.md` itself), as the final non-empty line. Tools MUST NOT reflow, reword, or relocate it; the normalizer appends a missing one.
 
-## 11. Liberal input → canonical form (normalization)
+## 12. Liberal input → canonical form (normalization)
 
 Readers SHOULD accept these variants; the normalizer maps them canonically. Anything else is opaque prose, preserved unchanged (moved under `## Summary` on first touch — see PROTOCOL.md#normalization).
 
@@ -168,10 +196,12 @@ Readers SHOULD accept these variants; the normalizer maps them canonically. Anyt
 | Missing pointer line | Appended per file's tier |
 | Un-slugged filename on a human entry | File renamed to slug form **only if never referenced**; otherwise kept and flagged |
 
-## 12. Conformance tests (v0.5 gates)
+## 13. Conformance tests (v0.5 gates)
 
 1. **Fixpoint**: `normalize(normalize(f)) = normalize(f)` over the whole corpus.
 2. **Reparse identity**: `parse(serialize(parse(f))) = parse(f)`.
 3. **Canonical stability**: for canonical `f`, `serialize(parse(f)) = f` byte-for-byte.
 4. **Opacity**: mutating any opaque region and re-normalizing preserves the mutation exactly.
 5. **Index-is-cache**: index rebuilt twice from the same files is identical; deleting the index loses nothing.
+6. **No-loss arbitration**: after arbitrating any set of proposals in any order, every op is either reflected in the item or its proposal is still staged (possibly escalated) — none silently discarded. Holds under clobbered writes: a proposal may be deleted only once the current item satisfies its ops.
+7. **Confluence**: from the same (item, staged-proposal set), arbitration in any order, by any arbiter, including concurrent duplicates, yields byte-identical items.

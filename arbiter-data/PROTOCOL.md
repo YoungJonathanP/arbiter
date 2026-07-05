@@ -21,6 +21,7 @@ Read this file once per session. Every other file in this directory tree ends wi
 - One `## <Card> (<total>)` section per card. Entry grammar, one line per item:
   - Work items: `- [<status>] <title> — <YYYY-MM-DD> -> <path>`
   - Records (no status): `- <title> — <YYYY-MM-DD> -> <path>`
+  - Pending arbitration: `- [<status>] (<N> staged) <title> — <YYYY-MM-DD> -> <path>` — the item has unresolved proposals in `<id>.staged/` (see #arbitration)
   - Overflow: `- +<N> more in <dir>/`
 - At most 5 entries per card, ordered by the card type's relevance rule (see `types/`): active items by recency first, terminal items last. Terminal items age off the card 7 days after closing (they remain in their tier-2 directory).
 - The `-> <path>` is the only file to open next.
@@ -41,6 +42,7 @@ Read this file once per session. Every other file in this directory tree ends wi
 
   The trailing anchor comment and the indented `blocked-by:`/`see:` lines are each optional; a `[!]` mark **must** carry a `blocked-by:` line. Update marks in place.
 - **Blocked items**: on opening an item with a `[!]` mark, check the blocker target's state first and update the mark before any other work.
+- **Staged proposals**: if `<dir>/<id>.staged/` is non-empty, do not edit the item directly — read the pending proposals, stage your change, and arbitrate (see #arbitration).
 - Relations: `parent:` and `related:` frontmatter name other item ids (epics, siblings, loose references). Reach for a related item **only** when the current item lacks the answer.
 - Follow a `## Detail docs` pointer only when the summary and checklist do not answer the question. Do not open unlinked siblings.
 - Detail-doc list entries: `- [[<doc-id>]] <title> (<kind>) -> <path>`.
@@ -80,10 +82,31 @@ Read this file once per session. Every other file in this directory tree ends wi
   where `<scope>` is `tier-1`, `tier-2`, `tier-3`, or `types`.
 - The pointer is the file's only embedded instruction. Never add navigation guidance inside item files; never remove or reword a pointer while doing item work.
 
-## Concurrency
+## Arbitration
 
-- Before writing, re-read the file (or heed the app's conflict signal). If it changed since your read, merge your intent with the new state — negotiate, never blind-overwrite.
-- Prefer the smallest sufficient edit (one mark, one field, one appended line) over rewriting sections.
+Concurrent writers negotiate through recorded intent, never overwrites. The write path:
+
+1. **Remember your base.** Note the item's content (hash or text) as you read it.
+2. **Write, then verify.** Before writing, re-read the file (or use the app's compare-and-swap). If it is unchanged and `<id>.staged/` is empty, apply your edit directly — smallest sufficient edit: one mark, one field, one appended line. Then re-read once more: if your change is present, you are done; if it vanished (a concurrent writer landed on top of you), treat it as contention. **A write you have not observed in the file is not done.**
+3. **Contention → rebase or propose.** Diff the current file against your base.
+   - Your ops commute with what changed (different fields or steps; pure appends), nothing is staged, and nothing is high-stakes → rebase onto the current state and retry step 2, at most twice.
+   - Otherwise — overlapping ops, anything already staged, a high-stakes edit (any transition to or from `done`/`dropped`, or reversing a change less than 48 hours old), or retries exhausted → write a proposal file: `<dir>/<id>.staged/<YYYY-MM-DD>-<author>-<base-slug>.md`, frontmatter `item`, `base` (hash of the version you merged against), `author`, `updated`, `ops` (grammar §9), body = **why**, with evidence links. The author label must be unique to your session (include a session suffix): filename uniqueness is chosen, never checked-then-created. Staging is sticky: while any proposal pends, every writer stages, so one arbitration pass sees all hands.
+4. **Arbitration.** Anyone may arbitrate — the writer who discovered the conflict, a later writer, or the triage sweep. Arbitration is a **pure function of the current item plus all staged proposals**: merge commuting ops, apply the resolution rules below, recompute status from the merged structure, record a dated resolution line under `## Summary`, and write the result (step-2 verification applies). Then delete **only** those proposals whose ops the verified item now satisfies — git history keeps the audit trail. Because the function is deterministic and order-independent, concurrent arbiters compute the same result: duplicate arbitration is a harmless no-op. Irreconcilable proposals stay staged and the item gets `status: needs-review`; a human or an explicitly invoked arbiter session decides.
+
+At every moment, each writer's intent is either observable in the item or present in `.staged/` — silent loss is structurally impossible, regardless of how many writers there are.
+
+Resolution rules:
+
+| Conflict | Rule |
+|---|---|
+| Both set `status` | Structure decides: merge checklist ops first, recompute status from marks (`[!]` with a live blocker ⇒ `blocked`; all `[x]` ⇒ `done` candidate). An explicit status that contradicts the merged structure loses. |
+| Same step, different marks | Take the further mark (`todo < in-flight < done`) — unless one is `[!]` with a `blocked-by:` link: blocked wins. |
+| Terminal reversal | Never auto-resolved. Propose, citing the closer's evidence; a human confirms if the closer's session is gone. |
+| Prose vs prose (same section) | No auto-merge, ever. Both stage; `needs-review`. |
+| Duplicate creation | Later item merges into the earlier one (reopen rule), then is deleted before anything references it. |
+| Append vs append | Always merge; dedupe byte-identical entries. |
+
+**Sweep:** triage arbitrates or escalates any proposal older than 24 hours whose author never returned. A crashed session's proposal still speaks for it.
 
 ## Normalization
 
