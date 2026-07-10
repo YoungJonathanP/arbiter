@@ -1,30 +1,39 @@
 ---
 name: arbiter
 description: >-
-  Read, write, and maintain the Arbiter knowledge base (arbiter-data/ —
-  dashboard, tasks, goals, meetings, journal, accomplishments). Use when the
-  user asks to track work, log or journal what was done, create/update/close a
-  task or goal, record a meeting or accomplishment, check what's in flight or
-  blocked, refresh the dashboard, resolve staged proposals (arbitrate), or at
-  the END of any session in this repo whose work should be captured. Also use
-  before hand-editing any file under arbiter-data/.
+  Read, write, and maintain the Arbiter knowledge base (tasks, goals,
+  meetings, journal, accomplishments over a dashboard). Works from ANY
+  directory — the data lives in one global arbiter-data/ directory. Use when
+  the user asks to track work, log or journal what was done, create/update/
+  close a task or goal, record a meeting or accomplishment, check what's in
+  flight or blocked, refresh the dashboard, resolve staged proposals
+  (arbitrate), or capture a session's work into Arbiter. Also use before
+  hand-editing any file inside an arbiter-data/ directory.
 ---
 
 # Operating Arbiter
 
-Arbiter is a file-canonical knowledge base: markdown files under `arbiter-data/`
-are the truth; agents with file tools are the primary client. The CLI
-(`arbiter`, or `npm run --silent arbiter --` if unbuilt) is a convenience over
-the same files, never a requirement.
+Arbiter is a file-canonical knowledge base: markdown files in the data
+directory are the truth; agents with file tools are the primary client.
+
+**Finding it from anywhere:** the `arbiter` CLI is on PATH (a `~/.local/bin`
+wrapper) and resolves the data directory itself: `--data` flag >
+`$ARBITER_DATA` (defaults to `~/Documents/Work/arbiter/arbiter-data`) > the
+nearest `arbiter-data/` walking up from cwd. For direct file-tool access,
+the directory is `"${ARBITER_DATA:-$HOME/Documents/Work/arbiter/arbiter-data}"`.
+If the CLI is missing, run it from the repo: `npm run --silent arbiter --
+<cmd>` in `~/Documents/Work/arbiter`.
+
+Paths below are relative to that data directory.
 
 ## Non-negotiable bootstrap
 
-1. Read `arbiter-data/PROTOCOL.md` **once per session** — it is the contract
-   and overrides anything here if they disagree.
-2. Orient from one read of `arbiter-data/DASHBOARD.md`; follow only the
-   `-> path` you need. **Never bulk-read sibling items.**
-3. Every file ends with an `arbiter:` pointer line naming the PROTOCOL section
-   that governs it. Never reword, move, or delete a pointer line.
+1. Read `PROTOCOL.md` (in the data directory) **once per session** — it is
+   the contract and overrides anything here if they disagree.
+2. Orient from one read of `DASHBOARD.md`; follow only the `-> path` you
+   need. **Never bulk-read sibling items.**
+3. Every file ends with an `arbiter:` pointer line naming the PROTOCOL
+   section that governs it. Never reword, move, or delete a pointer line.
 
 ## Before ANY write to an item
 
@@ -47,15 +56,15 @@ Prefer `arbiter new <type> "<title>"` — it enforces slug forms
 (`<base>-YYYYqN` work items, `<base>-YYYY-MM-DD` meetings) and the reopen rule
 (same base within ±2 quarters ⇒ reopen the existing item instead). Ids are
 immutable; files never move; refs are permanent `<dir>/<id>` object refs.
-Read `arbiter-data/types/<type>.md` before writing a type for the first time
-in a session.
+Read `types/<type>.md` before writing a type for the first time in a session.
 
-## Session-end capture (do this without being asked)
+## Capturing a session's work
 
-Work in this repo is dogfooded. Before ending a session that did meaningful
-work:
+When the user asks to capture, log, or track work — and always, unprompted,
+at the end of a session inside the Arbiter repo itself (its development is
+dogfooded):
 
-1. Update every item the session touched: checklist marks in place, honest
+1. Update every item the work touched: checklist marks in place, honest
    `status:`, bumped `updated:`.
 2. Append a journal entry for non-obvious findings (`arbiter new journal ...`;
    one line now beats a perfect entry never written).

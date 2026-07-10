@@ -6,7 +6,7 @@ status: done
 parent: goals/v0-5-headless-core-2026q3
 created: 2026-07-10
 started: 2026-07-10
-updated: 2026-07-10T01:05
+updated: 2026-07-10T02:00
 ---
 
 # Agent skill for operating Arbiter
@@ -18,5 +18,7 @@ Done. Project skill at .claude/skills/arbiter/SKILL.md teaching agent sessions h
 - [x] SKILL.md: bootstrap, write path, creation, capture etiquette, never-list
 - [x] trigger description covers track/log/journal/close/arbitrate phrasings
 - [x] CLAUDE.md routes repo sessions to the skill and the dogfood rule
+- [x] skill abstracted to user level: symlinked to ~/.claude/skills/arbiter (repo copy is source of truth); content made location-independent
+- [x] global CLI entry: ~/.local/bin/arbiter wrapper + ARBITER_DATA export; CLI resolves data dir from any cwd (--data > env > upward walk)
 
 <!-- arbiter:tier-2 · PROTOCOL.md#tier-2 · terminal: distill an accomplishment with evidence when closing -->

@@ -10,8 +10,15 @@ the read-only renderer sit on top. Normative specs: `docs/grammar.md`
 
 Arbiter tracks its own development. If your session does meaningful work,
 capture it in `arbiter-data/` before finishing — use the **arbiter** skill
-(`.claude/skills/arbiter/`), which defers to `arbiter-data/PROTOCOL.md` as the
-contract. Finish with `arbiter validate` green and a regenerated dashboard.
+(`.claude/skills/arbiter/`, also symlinked to `~/.claude/skills/arbiter` so it
+works from any directory; this repo's copy is the source of truth), which
+defers to `arbiter-data/PROTOCOL.md` as the contract. Finish with `arbiter
+validate` green and a regenerated dashboard.
+
+The `arbiter` CLI works from anywhere: `~/.local/bin/arbiter` wraps the built
+`bin/arbiter.js`, and data-dir resolution is `--data` > `$ARBITER_DATA`
+(exported in `~/.bashrc`) > nearest `arbiter-data/` walking up from cwd.
+After changing CLI/core source, `npm run build` so the wrapper picks it up.
 
 ## Commands
 

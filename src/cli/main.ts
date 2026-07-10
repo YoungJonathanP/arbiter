@@ -55,12 +55,31 @@ function parseArgs(argv: string[]): Args {
   return { cmd, positional, flags };
 }
 
+/**
+ * Data-directory resolution, so `arbiter` works from any directory:
+ *   1. --data flag
+ *   2. ARBITER_DATA environment variable
+ *   3. walk up from cwd looking for arbiter-data/PROTOCOL.md
+ *      (or being inside the data directory itself)
+ */
 function dataDir(args: Args): string {
   const flag = args.flags.get('data');
   if (typeof flag === 'string') return path.resolve(flag);
-  const local = path.resolve('arbiter-data');
-  if (fs.existsSync(local)) return local;
-  return path.resolve('.');
+  const env = process.env['ARBITER_DATA'];
+  if (env !== undefined && env !== '') return path.resolve(env);
+  let cur = process.cwd();
+  for (;;) {
+    const candidate = path.join(cur, 'arbiter-data');
+    if (fs.existsSync(path.join(candidate, 'PROTOCOL.md'))) return candidate;
+    if (path.basename(cur) === 'arbiter-data' && fs.existsSync(path.join(cur, 'PROTOCOL.md'))) return cur;
+    const parent = path.dirname(cur);
+    if (parent === cur) break;
+    cur = parent;
+  }
+  console.error(
+    'no arbiter-data directory found — pass --data <dir>, set ARBITER_DATA, or run inside a tree containing arbiter-data/PROTOCOL.md',
+  );
+  process.exit(2);
 }
 
 function nowStamp(args: Args): string {
@@ -400,6 +419,8 @@ function help(): void {
   console.log(`arbiter — headless core for the Arbiter knowledge base (protocol 0.4.4)
 
 usage: arbiter <command> [args] [--data <dir>] [--now <YYYY-MM-DDTHH:MM>]
+
+data dir: --data > $ARBITER_DATA > nearest arbiter-data/ walking up from cwd
 
   validate                       judge the data directory against grammar + type schemas
   regen [--full] [--dry-run]     regenerate DASHBOARD.md (incremental by default)
