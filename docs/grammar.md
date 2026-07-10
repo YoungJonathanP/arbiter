@@ -1,6 +1,6 @@
 # Arbiter grammar — the machine-read subset
 
-*v0.4.4 · Normative spec for the parts of arbiter-data files that tools parse, validate, and rewrite. Companion to [`arbiter-data/PROTOCOL.md`](../arbiter-data/PROTOCOL.md) (the agent-facing contract) — where the two disagree, this document wins for machines. Everything **not** matched by a production here is opaque prose: tools MUST preserve it byte-for-byte and MUST NOT derive meaning from it.*
+*v0.4.5 · Normative spec for the parts of arbiter-data files that tools parse, validate, and rewrite. Companion to [`arbiter-data/PROTOCOL.md`](../arbiter-data/PROTOCOL.md) (the agent-facing contract) — where the two disagree, this document wins for machines. Everything **not** matched by a production here is opaque prose: tools MUST preserve it byte-for-byte and MUST NOT derive meaning from it.*
 
 ## 1. Conformance
 
@@ -167,8 +167,11 @@ evidence        ::= " (" md-link (", " md-link)* ")"
 Determinism constraints (these make gate 7 satisfiable):
 
 - One resolution line per deleted proposal, appended in bytewise proposal-filename order; verdicts follow the proposal's `ops` order.
+- Resolution lines form one contiguous block at the end of `## Summary`; when the summary's last line is not already a resolution line, exactly one blank line precedes the block. *(v0.4.5)*
 - An `overruled` verdict MUST carry the proposal's evidence: the distinct md-links of its body, in body order.
+- A `blocked` mark-op applied by arbitration synthesizes the step's `blocked-by:` continuation from the **first** distinct md-link of its proposal's body. *(v0.4.5)*
 - The item's post-arbitration `updated` is the **maximum** `updated` across the item and the arbitrated proposals — never wall clock; `resolution-line`'s `date` is that value's date part. Arbitration takes no input beyond the item and its staged proposals.
+- An arbitration that deletes the last staged proposal SHOULD remove the emptied `.staged/` directory; leaving it in place is equally conforming — an empty staging directory means nothing is pending. *(v0.4.5)*
 
 ## 10. Type schemas (`types/*.md`)
 

@@ -25,13 +25,13 @@ The machine-read surface of arbiter-data, specified precisely enough that a vali
 
 ## v0.5 — Headless core: library + CLI *(usable milestone — dogfooding starts)*
 
-- [ ] **Spec-readability test** (v0.4 exit criterion, carried) — hand-write a small arbiter-data directory from the spec alone, including one `.staged/` conflict with two overlapping proposals; two independent readers (fresh agent sessions, spec only) judge validity and arbitrate the conflict. Divergent verdicts are spec bugs to fix before code. The directory becomes the validator's fixture corpus and the dogfood seed.
-- [ ] **Stack decision** — recommendation: TypeScript throughout; `better-sqlite3` for the derived index; one package with `core/` (parser, normalizer, validator, index, queries) and `cli/`. The renderer consumes the same core later.
-- [ ] **Parser + validator** implementing the v0.4 grammar. Property tests: parse → normalize → parse fixpoint; index rebuilt from files twice is identical (index is a cache, never truth).
-- [ ] **Derived index + queries** — relevance ordering, overdue flagging, 7-day age-off, 14-day needs-review, pagination windows. All tier-1/tier-2 logic is queries over the index; anything the queries produce that matters (e.g. needs-review status) is written back to markdown.
-- [ ] **CLI**: `arbiter validate`, `arbiter regen` (DASHBOARD.md), `arbiter triage`, `arbiter query`, `arbiter new <type>`, `arbiter arbitrate <item>` (apply/resolve staged proposals), plus `arbiter write --if-match <hash>` as the CAS write path.
-- [ ] **Seed real data** — convert the prototype's sample data into a real `arbiter-data/`, then replace samples with Jonathan's actual current work.
-- [ ] **Dogfood from day one** — Arbiter's own development is tracked in arbiter-data; agent sessions in this repo read PROTOCOL.md and keep items current.
+- [x] **Spec-readability test** (v0.4 exit criterion, carried) — done 2026-07-06/08: [`spec-readability-test.md`](spec-readability-test.md); the fixture graduated to `fixtures/arbiter-data/` as validator corpus and regression oracle.
+- [x] **Stack decision** — as recommended: TypeScript throughout; `better-sqlite3` for the derived index; one package with `src/core/` and `src/cli/` ([`v0.5-decisions.md`](v0.5-decisions.md)). The renderer consumes the same core later.
+- [x] **Parser + validator** implementing the grammar (now v0.4.5 — writer-determinism patches only). Property tests = grammar §13 gates 1–7, including fixpoint, byte-stable canonical files, index-is-cache, and byte-exact confluent arbitration of the fixture conflict.
+- [x] **Derived index + queries** — relevance ordering, overdue flagging, 7-day age-off, 14-day needs-review, pagination windows, prev-chain forward pointers. Consequences (needs-review, archived) are written back to markdown by triage.
+- [x] **CLI**: `validate`, `regen` (incremental by default), `triage`, `query`, `new <type>`, `arbitrate <item>`, `write --if-match <hash>`, plus `normalize` and `hash`.
+- [x] **Seed real data** — `arbiter-data/` now tracks v0.5 itself (goal + tasks + journal + regenerated DASHBOARD.md); replace/extend with Jonathan's actual current work as the dogfood week proceeds.
+- [ ] **Dogfood from day one** — in progress: Arbiter's own development is tracked in arbiter-data; agent sessions in this repo read PROTOCOL.md and keep items current. Exit: a week of real use.
 
 **Exit criteria:** a week of real use with agents + CLI only; DASHBOARD.md regenerates correctly; validator green in CI.
 

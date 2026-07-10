@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: typecheck + conformance gates 1-7
+        run: npm test
+      - name: validator green on the fixture corpus
+        run: npm run --silent arbiter -- validate --data fixtures/arbiter-data
+      - name: validator green on the live dogfood corpus
+        run: npm run --silent arbiter -- validate --data arbiter-data
