@@ -6,7 +6,7 @@ status: done
 parent: goals/v0-5-headless-core-2026q3
 created: 2026-07-10
 started: 2026-07-10
-updated: 2026-07-10T00:45
+updated: 2026-07-10T01:40
 ---
 
 # Visual inspection scaffold
@@ -19,5 +19,6 @@ Done. `arbiter serve` — a read-only, zero-dependency local web renderer over t
 - [x] staged proposals surface on the contended item with their intents
 - [x] HTML escaped; path traversal refused; localhost-only bind
 - [x] route tests green in the suite
+- [x] visual alignment with the v0 prototype: tokens + dark mode, topbar (hamburger, wordmark seal, status legend), card board, sidenav, item blocks, collapsible view-as-agent
 
 <!-- arbiter:tier-2 · PROTOCOL.md#tier-2 · terminal: distill an accomplishment with evidence when closing -->

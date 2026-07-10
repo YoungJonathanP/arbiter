@@ -1,7 +1,7 @@
 ---
-updated: 2026-07-10T01:05
+updated: 2026-07-10T01:40
 generator: arbiter-cli
-generated: 2026-07-10T01:06
+generated: 2026-07-10T01:41
 protocol: "0.4.4"
 ---
 
@@ -9,8 +9,8 @@ protocol: "0.4.4"
 
 ## Tasks (4)
 - [in-flight] Arbiter CLI — 2026-07-10 -> tasks/arbiter-cli-2026q3.md
-- [done] Agent skill for operating Arbiter — 2026-07-10 -> tasks/agent-skill-for-operating-arbiter-2026q3.md
 - [done] Visual inspection scaffold — 2026-07-10 -> tasks/visual-inspection-scaffold-2026q3.md
+- [done] Agent skill for operating Arbiter — 2026-07-10 -> tasks/agent-skill-for-operating-arbiter-2026q3.md
 - [done] Core library and conformance gates — 2026-07-09 -> tasks/core-library-and-conformance-gates-2026q3.md
 
 ## Goals (1)
