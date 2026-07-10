@@ -17,7 +17,8 @@ Arbiter is a file-canonical knowledge base: markdown files in the data
 directory are the truth; agents with file tools are the primary client.
 
 **Finding it from anywhere:** the `arbiter` CLI is on PATH (a `~/.local/bin`
-wrapper) and resolves the data directory itself: `--data` flag >
+wrapper installed by the repo's `scripts/dev-bind.sh` — temporary until the
+v1.0 install story) and resolves the data directory itself: `--data` flag >
 `$ARBITER_DATA` (defaults to `~/Documents/Work/arbiter/arbiter-data`) > the
 nearest `arbiter-data/` walking up from cwd. For direct file-tool access,
 the directory is `"${ARBITER_DATA:-$HOME/Documents/Work/arbiter/arbiter-data}"`.

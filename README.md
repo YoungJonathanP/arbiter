@@ -81,7 +81,14 @@ npm run --silent arbiter -- validate --data arbiter-data
 npm run --silent arbiter -- regen    --data arbiter-data
 ```
 
-After `npm run build`, `bin/arbiter.js` is a plain executable (or `npm link` to put `arbiter` on your PATH):
+After `npm run build`, `bin/arbiter.js` is a plain executable. To put `arbiter` on your PATH for the dev trial, use the **temporary** dev bind:
+
+```sh
+scripts/dev-bind.sh install     # wrapper at ~/.local/bin/arbiter + ARBITER_DATA in bash profiles
+scripts/dev-bind.sh uninstall   # removes everything it installed (fenced marker blocks)
+```
+
+This is scaffolding, not the install story: it hard-codes this repo's paths and edits bash profiles. The v1.0 install story ([`docs/launch-plan.md`](docs/launch-plan.md)) replaces it, and running `uninstall` is part of that cleanup. Once bound:
 
 ```sh
 arbiter validate                 # judge the data directory against grammar + type schemas

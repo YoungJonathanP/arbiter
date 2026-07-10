@@ -65,7 +65,7 @@ The machine-read surface of arbiter-data, specified precisely enough that a vali
 
 - [ ] **Concurrency tests** — N writers (agents + app) on one item: write-then-verify, rebase-retry, sticky staging, and confluent arbitration exercised end-to-end against grammar gates 6–7; no silent loss under any interleaving.
 - [ ] **History safety net** — auto-commit of arbiter-data on regen/triage so every programmatic mutation is one `git revert` from undone.
-- [ ] **Install story** — one command to set up the CLI + renderer against a fresh or existing data directory.
+- [ ] **Install story** — one command to set up the CLI + renderer against a fresh or existing data directory. Cleanup items: retire the v0.5 dev-trial binding (`scripts/dev-bind.sh uninstall` — wrapper + fenced profile exports) and any lingering `npm link`; the real install replaces both.
 - [ ] **Docs pass** — README, PROTOCOL.md, and type schemas current; investigation and plan docs archived as decided/done.
 
 ---

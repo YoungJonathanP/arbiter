@@ -15,10 +15,12 @@ works from any directory; this repo's copy is the source of truth), which
 defers to `arbiter-data/PROTOCOL.md` as the contract. Finish with `arbiter
 validate` green and a regenerated dashboard.
 
-The `arbiter` CLI works from anywhere: `~/.local/bin/arbiter` wraps the built
-`bin/arbiter.js`, and data-dir resolution is `--data` > `$ARBITER_DATA`
-(exported in `~/.bashrc`) > nearest `arbiter-data/` walking up from cwd.
-After changing CLI/core source, `npm run build` so the wrapper picks it up.
+The `arbiter` CLI works from anywhere: `scripts/dev-bind.sh install` (a
+TEMPORARY dev-trial binding, retired at the v1.0 install story) writes a
+`~/.local/bin/arbiter` wrapper and fenced `ARBITER_DATA` exports into the bash
+profiles. Data-dir resolution is `--data` > `$ARBITER_DATA` > nearest
+`arbiter-data/` walking up from cwd. After changing CLI/core source,
+`npm run build` so the wrapper picks it up.
 
 ## Commands
 

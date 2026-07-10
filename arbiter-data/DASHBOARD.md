@@ -1,13 +1,14 @@
 ---
-updated: 2026-07-10T02:20
+updated: 2026-07-10T02:50
 generator: arbiter-cli
-generated: 2026-07-10T02:21
+generated: 2026-07-10T02:51
 protocol: "0.4.4"
 ---
 
 # Dashboard
 
-## Tasks (4)
+## Tasks (5)
+- [todo] Retire dev-trial CLI binding at v1.0 — 2026-07-10 -> tasks/retire-dev-trial-cli-binding-at-v1-0-2026q3.md
 - [in-flight] Arbiter CLI — 2026-07-10 -> tasks/arbiter-cli-2026q3.md
 - [done] Agent skill for operating Arbiter — 2026-07-10 -> tasks/agent-skill-for-operating-arbiter-2026q3.md
 - [done] Visual inspection scaffold — 2026-07-10 -> tasks/visual-inspection-scaffold-2026q3.md
