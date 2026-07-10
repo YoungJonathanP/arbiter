@@ -54,9 +54,49 @@ Agents may operate Arbiter with full autonomy, so clean navigation and minimal c
 
 Arbiter is collaborative and headed toward being an application (likely a web app) so that index regeneration, pagination, triage, and archive stamping happen programmatically instead of burdening agents. Logseq remains the closest architectural reference, now on both sides of its 2026 split: its file-canonical version validates files-as-truth at Arbiter's scale, and its database version contributes the typed card-schema and parse-to-index patterns — see [`docs/logseq-investigation.md`](docs/logseq-investigation.md).
 
+## Getting started
+
+### Prerequisites
+
+- **Node.js ≥ 22** (`node --version`) and npm. The repo pins the engine in `package.json`.
+- The only runtime dependency is `better-sqlite3`, which ships prebuilt binaries for common platforms. If your platform has no prebuild, `npm install` falls back to compiling it, which needs a C++ toolchain (macOS: `xcode-select --install`; Debian/Ubuntu: `build-essential` + `python3`).
+
+### Build and test
+
+```sh
+npm install        # install deps (native build only if no prebuilt binary exists)
+npm test           # typecheck + conformance gates 1–7 (17 tests, fixture corpus as oracle)
+npm run build      # compile to dist/ (enables bin/arbiter.js)
+```
+
+### Run the CLI
+
+During development (no build needed):
+
+```sh
+npm run --silent arbiter -- validate --data arbiter-data
+npm run --silent arbiter -- regen    --data arbiter-data
+```
+
+After `npm run build`, `bin/arbiter.js` is a plain executable (or `npm link` to put `arbiter` on your PATH):
+
+```sh
+arbiter validate                 # judge the data directory against grammar + type schemas
+arbiter regen [--full]           # regenerate DASHBOARD.md (incremental by default)
+arbiter triage                   # needs-review stamps, archive flags, 24h staged sweep
+arbiter query <sub> [--json]     # overdue | needs-review | staged | active <dir> | page <dir> [n] | chain <ref>
+arbiter new <type> <title...>    # create an item (slug form + reopen rule enforced)
+arbiter arbitrate <dir>/<id>     # apply/resolve staged proposals (pure, confluent)
+arbiter write <path> --if-match <sha256|new>   # CAS write; content from stdin or --file
+arbiter normalize [--dry-run]    # liberal → canonical repair pass (idempotent)
+arbiter hash <path>              # sha256 for the --if-match flow
+```
+
+Every command takes `--data <dir>` (default: `./arbiter-data`) and `--now <YYYY-MM-DDTHH:MM>` (for deterministic runs; defaults to wall clock). CI runs `npm test` plus `arbiter validate` over both the fixture corpus and the live dogfood directory.
+
 ## Status
 
-**v0.4 — contract spec + clickable visual prototype.** The agent contract is now real: [`arbiter-data/PROTOCOL.md`](arbiter-data/PROTOCOL.md) with per-card type schemas in [`arbiter-data/types/`](arbiter-data/types/), the machine-read subset formally specified in [`docs/grammar.md`](docs/grammar.md), and N-writer-safe concurrency specced as the arbitration protocol ([`docs/arbitration.md`](docs/arbitration.md)). The contract phase is closed; next up is the v0.5 headless core (see [`docs/launch-plan.md`](docs/launch-plan.md)).
+**v0.5 — headless core (library + CLI), dogfooding.** The v0.4 contract ([`arbiter-data/PROTOCOL.md`](arbiter-data/PROTOCOL.md), type schemas in [`arbiter-data/types/`](arbiter-data/types/), the normative machine-read grammar in [`docs/grammar.md`](docs/grammar.md), arbitration in [`docs/arbitration.md`](docs/arbitration.md)) is now implemented as a TypeScript core (`src/core/`) and CLI (`src/cli/`): parser, byte-stable canonical serializer, idempotent normalizer, schemas-as-data validator, disposable SQLite index, incremental dashboard regeneration, and arbitration as a pure confluent function. Grammar §13's conformance gates 1–7 are the property-test suite, run against [`fixtures/arbiter-data/`](fixtures/arbiter-data/) — including a staged two-proposal conflict whose arbitration is pinned byte-for-byte. Implementation decisions are recorded in [`docs/v0.5-decisions.md`](docs/v0.5-decisions.md); Arbiter's own development is tracked in [`arbiter-data/`](arbiter-data/) from day one.
 
 The visual prototype: Open [`prototype/dashboard.html`](prototype/dashboard.html) in a browser. It is fully self-contained (no build, no network) and demonstrates:
 
