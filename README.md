@@ -52,7 +52,7 @@ Agents may operate Arbiter with full autonomy, so clean navigation and minimal c
 - **Slugs are immutable addresses** of the form `<base>-YYYYqN`; recurrence within ±2 quarters reopens the item, beyond that it's new. Items may carry `parent:`/`related:` frontmatter for epics and loose sibling references, reached only when the current item lacks the answer.
 - **Concurrent writes are arbitrated**: uncontended edits apply directly (write-then-verify); contended or high-stakes edits stage as intent-carrying proposal files in `<id>.staged/` and are merged by confluent resolution rules — no silent loss at any writer count. See [`docs/arbitration.md`](docs/arbitration.md).
 
-Arbiter is collaborative and headed toward being an application (likely a web app) so that index regeneration, pagination, triage, and archive rolls happen programmatically instead of burdening agents. Logseq remains the closest architectural reference, now on both sides of its 2026 split: its file-canonical version validates files-as-truth at Arbiter's scale, and its database version contributes the typed card-schema and parse-to-index patterns — see [`docs/logseq-investigation.md`](docs/logseq-investigation.md).
+Arbiter is collaborative and headed toward being an application (likely a web app) so that index regeneration, pagination, triage, and archive stamping happen programmatically instead of burdening agents. Logseq remains the closest architectural reference, now on both sides of its 2026 split: its file-canonical version validates files-as-truth at Arbiter's scale, and its database version contributes the typed card-schema and parse-to-index patterns — see [`docs/logseq-investigation.md`](docs/logseq-investigation.md).
 
 ## Status
 
