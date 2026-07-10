@@ -16,6 +16,7 @@ import { parseFrontmatter, parseItemFile, splitLines } from '../core/parse.js';
 import {
   activeSet,
   chain,
+  children,
   needsReviewCandidates,
   overdue,
   recordPage,
@@ -100,7 +101,7 @@ function protocolRaw(dir: string): string {
     const raw = fm ? fmGetRaw(fm.fm, 'version') : undefined;
     if (raw) return raw;
   }
-  return '"0.4.4"';
+  return '"0.4.6"';
 }
 
 function resolveItemPath(dir: string, arg: string): { abs: string; rel: string } {
@@ -193,6 +194,8 @@ function cmdQuery(args: Args): void {
         return stagedItems(db);
       case 'active':
         return activeSet(db, args.positional[1] ?? 'tasks');
+      case 'children':
+        return children(db, args.positional[1] ?? '');
       case 'page':
         return recordPage(db, args.positional[1] ?? 'journal', Number(args.positional[2] ?? '0'));
       case 'chain': {
@@ -201,7 +204,7 @@ function cmdQuery(args: Args): void {
         return null;
       }
       default:
-        console.error(`unknown query: ${sub} (overdue | needs-review | staged | active <dir> | page <dir> [n] | chain <ref>)`);
+        console.error(`unknown query: ${sub} (overdue | needs-review | staged | active <dir> | children <ref> | page <dir> [n] | chain <ref>)`);
         process.exit(2);
     }
   })();
@@ -426,7 +429,7 @@ function cmdNormalize(args: Args): void {
 }
 
 function help(): void {
-  console.log(`arbiter — headless core for the Arbiter knowledge base (protocol 0.4.4)
+  console.log(`arbiter — headless core for the Arbiter knowledge base (protocol 0.4.6)
 
 usage: arbiter <command> [args] [--data <dir>] [--now <YYYY-MM-DDTHH:MM>]
 
@@ -435,7 +438,7 @@ data dir: --data > $ARBITER_DATA > nearest arbiter-data/ walking up from cwd
   validate                       judge the data directory against grammar + type schemas
   regen [--full] [--dry-run]     regenerate DASHBOARD.md (incremental by default)
   triage [--dry-run]             needs-review stamps, archive flags, 24h staged sweep
-  query <sub> [--json]           overdue | needs-review | staged | active <dir> | page <dir> [n] | chain <ref>
+  query <sub> [--json]           overdue | needs-review | staged | active <dir> | children <ref> | page <dir> [n] | chain <ref>
   new <type> <title...>          create an item (slug form + reopen rule enforced)
   arbitrate <dir>/<id> [--dry-run]  apply/resolve staged proposals (pure, confluent)
   write <path> --if-match <sha256|new>  CAS write; content from stdin or --file

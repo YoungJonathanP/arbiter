@@ -42,11 +42,17 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
 
   const byPath = new Map(files.map((f) => [f.relPath, f]));
   const anchorsByPath = new Map<string, Set<string>>();
+  const itemMeta = new Map<string, { parent?: string; archived: boolean }>();
 
-  // pass 1: collect anchors so cross-file anchor refs can be checked
+  // pass 1: collect anchors (for cross-file anchor refs) and parent/archived
+  // facts (for the nesting checks after the main loop)
   for (const f of files) {
     if (f.kind !== 'item') continue;
     const ast = parseItemFile(f.text);
+    itemMeta.set(f.relPath, {
+      parent: fmGet(ast.fm, 'parent'),
+      archived: fmGet(ast.fm, 'archived') !== undefined,
+    });
     const anchors = new Set<string>();
     for (const s of ast.sections) {
       if (s.kind !== 'checklist') continue;
@@ -260,6 +266,42 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
         break;
       }
     }
+  }
+
+  // nesting structure (grammar §7 membership): one supported level, no cycles
+  const sameDirParent = (rel: string): string | undefined => {
+    const p = itemMeta.get(rel)?.parent;
+    if (p === undefined || !p.startsWith(`${rel.split('/')[0]}/`)) return undefined;
+    const pRel = `${p}.md`;
+    return itemMeta.has(pRel) ? pRel : undefined;
+  };
+  const isSub = (rel: string): boolean => {
+    const pRel = sameDirParent(rel);
+    return pRel !== undefined && !itemMeta.get(pRel)!.archived;
+  };
+  const inCycle = new Set<string>();
+  for (const start of itemMeta.keys()) {
+    const path: string[] = [];
+    const onPath = new Set<string>();
+    let cur: string | undefined = start;
+    while (cur !== undefined && !inCycle.has(cur)) {
+      if (onPath.has(cur)) {
+        for (const m of path.slice(path.indexOf(cur))) {
+          inCycle.add(m);
+          err(m, 'parent cycle among same-directory items — every member would be unreachable from tier 1');
+        }
+        break;
+      }
+      onPath.add(cur);
+      path.push(cur);
+      cur = sameDirParent(cur);
+    }
+  }
+  for (const rel of itemMeta.keys()) {
+    if (inCycle.has(rel)) continue;
+    const pRel = sameDirParent(rel);
+    if (pRel !== undefined && isSub(rel) && isSub(pRel))
+      warn(rel, 'sub-item nested deeper than one level (one level is the supported presentation depth)');
   }
 
   return { errors, warnings };

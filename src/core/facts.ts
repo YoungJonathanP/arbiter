@@ -31,6 +31,8 @@ export interface ItemFacts {
   related: string[];
   stagedCount: number;
   raw: boolean; // no frontmatter yet
+  /** first non-empty line of ## Summary — the one-line summary nested views show */
+  summaryFirst?: string;
   anchors: string[];
   steps: { mark: string; text: string; anchor?: string }[];
   docs: { docId: string; title: string; docKind: string; relPath: string }[];
@@ -77,6 +79,9 @@ export function extractFacts(dataDir: string, files: CorpusFile[], schemas: Sche
       docs: [],
     };
     for (const s of ast.sections) {
+      if (s.kind === 'prose' && s.heading === 'Summary' && facts.summaryFirst === undefined) {
+        facts.summaryFirst = s.lines.find((l) => l !== '');
+      }
       if (s.kind === 'checklist') {
         for (const st of s.steps) {
           facts.steps.push({ mark: st.mark, text: st.text, anchor: st.anchor });
@@ -93,4 +98,65 @@ export function extractFacts(dataDir: string, files: CorpusFile[], schemas: Sche
 /** Days between two YYYY-MM-DD dates (b - a). */
 export function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+}
+
+// Nesting (PROTOCOL.md#tier-1/#tier-2, grammar §7 membership): a work item
+// whose `parent` resolves to an existing, non-archived item in the SAME
+// directory is a sub-item — off tier 1, reached through its parent. The child
+// list is derived from the children's parent refs (forward pointers are
+// computed, never stored), and staged counts roll up onto the nearest
+// top-level ancestor so hidden proposals stay visible on the card.
+
+export interface Nesting {
+  /** true = hidden from tier 1; reached through its parent */
+  isSub(ref: string): boolean;
+  /** direct children (any dir), relevance-ordered: non-terminal by updated desc, terminal last */
+  childrenOf(ref: string): ItemFacts[];
+  /** own staged count + staged counts of all sub-item descendants */
+  rolledStaged(f: ItemFacts): number;
+}
+
+export function computeNesting(facts: ItemFacts[]): Nesting {
+  const byRef = new Map(facts.map((f) => [f.ref, f]));
+  const subs = new Set<string>();
+  const children = new Map<string, ItemFacts[]>();
+  for (const f of facts) {
+    if (f.parent === undefined) continue;
+    const p = byRef.get(f.parent);
+    if (p !== undefined) {
+      const list = children.get(p.ref) ?? [];
+      list.push(f);
+      children.set(p.ref, list);
+    }
+    if (p !== undefined && p.dir === f.dir && !p.archived) subs.add(f.ref);
+  }
+  for (const list of children.values()) {
+    list.sort((a, b) => {
+      const at = isTerminal(a.status) ? 1 : 0;
+      const bt = isTerminal(b.status) ? 1 : 0;
+      if (at !== bt) return at - bt;
+      const au = a.updatedRaw ?? '';
+      const bu = b.updatedRaw ?? '';
+      if (au !== bu) return au < bu ? 1 : -1;
+      return a.ref < b.ref ? -1 : 1;
+    });
+  }
+  // attribute each sub-item's staged count to its nearest top-level ancestor
+  // (cycle-guarded: a parent cycle is a validator error; its counts stay put)
+  const extra = new Map<string, number>();
+  for (const f of facts) {
+    if (!subs.has(f.ref) || f.stagedCount === 0) continue;
+    const seen = new Set<string>([f.ref]);
+    let cur = byRef.get(f.parent!);
+    while (cur !== undefined && subs.has(cur.ref) && !seen.has(cur.ref)) {
+      seen.add(cur.ref);
+      cur = cur.parent !== undefined ? byRef.get(cur.parent) : undefined;
+    }
+    if (cur !== undefined && !seen.has(cur.ref)) extra.set(cur.ref, (extra.get(cur.ref) ?? 0) + f.stagedCount);
+  }
+  return {
+    isSub: (ref) => subs.has(ref),
+    childrenOf: (ref) => children.get(ref) ?? [],
+    rolledStaged: (f) => f.stagedCount + (extra.get(f.ref) ?? 0),
+  };
 }

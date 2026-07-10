@@ -1,6 +1,6 @@
 ---
 id: protocol
-version: "0.4.4"
+version: "0.4.6"
 ---
 
 # Arbiter agent protocol
@@ -23,10 +23,10 @@ Read this file once per session. Every other file in this directory tree ends wi
 - One `## <Card> (<total>)` section per card. Entry grammar, one line per item:
   - Work items: `- [<status>] <title> — <YYYY-MM-DD> -> <path>`
   - Records (no status): `- <title> — <YYYY-MM-DD> -> <path>`
-  - Pending arbitration: `- [<status>] (<N> staged) <title> — <YYYY-MM-DD> -> <path>` — the item has unresolved proposals in `<id>.staged/` (see #arbitration). This flag is the most urgent thing on a card: arbitrate before other work.
+  - Pending arbitration: `- [<status>] (<N> staged) <title> — <YYYY-MM-DD> -> <path>` — unresolved proposals in `<id>.staged/` (see #arbitration); for work items `<N>` also counts proposals staged on the item's sub-items, which have no entry of their own. This flag is the most urgent thing on a card: arbitrate before other work.
   - Overflow (record cards only): `- +<N> more in <dir>/`
 - The entry date is the date part of the item's `updated` for work items, and its `date` for records.
-- Work-item cards (tasks, goals) list **every** non-archived item, ordered by the type's relevance rule (see `types/`): non-terminal by recency first, terminal last. Terminal items age off the card 7 days after closing; archived items never appear. The card is the complete active set — a session initializes from this one read, never by searching directories.
+- Work-item cards (tasks, goals) list every non-archived **top-level** item, ordered by the type's relevance rule (see `types/`): non-terminal by recency first, terminal last. Terminal items age off the card 7 days after closing; archived items never appear. A **sub-item** — one whose `parent:` resolves to an existing, non-archived item in the same directory (a task under a task) — never appears on the card: it is reached through its parent (see #tier-2). The card is the complete active set of top-level work — a session initializes from this one read, never by searching directories.
 - Record cards (meetings, journal, accomplishments) list the 5 most recent non-archived entries plus an overflow count; older records are reached by recency paging at tier 2, never carried on the card.
 - The header `<total>` counts the card's non-archived items.
 - The `-> <path>` is the only file to open next.
@@ -49,6 +49,7 @@ Read this file once per session. Every other file in this directory tree ends wi
 - **Blocked items**: on opening an item with a `[!]` mark, check the blocker target's state first and update the mark before any other work (a still-live blocker means no change — leave the `[!]` in place).
 - **Staged proposals**: if `<dir>/<id>.staged/` is non-empty, do not edit the item directly — read the pending proposals, stage your change, and arbitrate (see #arbitration).
 - Relations: `parent:`, `related:`, `source:`, and `prev:` frontmatter name other objects by permanent object ref `<dir>/<id>` (e.g. `goals/q3-deploy-pipeline-2026q3`) — epics, siblings, sources, predecessors. Reach for a related item **only** when the current item lacks the answer.
+- **Nesting**: `parent:` may name an item of the same type — a task whose parent is a task is a **sub-task** (goals likewise). Sub-items stay off tier 1 (see #tier-1); a parent's rendered view nests its children as summary entries (status dot, title, one-line summary, -> link), each opening the child's own full view. The child list is **derived from the children's `parent` refs** — like prev-chains, the forward pointer is computed, never stored; nothing is added to the parent file. With file tools, find children via `arbiter query children <dir>/<id>`; a parent SHOULD carry a `see:` link to a load-bearing child from the checklist step it serves. Keep nesting to one level — the validator flags deeper chains.
 - Follow a `## Detail docs` pointer only when the summary and checklist do not answer the question. Do not open unlinked siblings.
 - Detail-doc list entries: `- [[<doc-id>]] <title> (<kind>) -> <path>`.
 

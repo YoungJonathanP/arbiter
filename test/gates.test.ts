@@ -137,7 +137,7 @@ test('gate 5 — incremental dashboard regen is byte-identical to a full rebuild
   const files = walkCorpus(FIXTURE_DIR);
   const facts = extractFacts(FIXTURE_DIR, files, schemas);
   const prev = fs.readFileSync(path.join(FIXTURE_DIR, 'DASHBOARD.md'), 'utf8');
-  const opts = { now: '2026-07-09T09:00', protocolRaw: '"0.4.4"', generator: 'arbiter-cli' };
+  const opts = { now: '2026-07-09T09:00', protocolRaw: '"0.4.6"', generator: 'arbiter-cli' };
   const inc = regenIncremental(facts, prev, opts);
   const full = regenFull(facts, prev, opts);
   assert.equal(inc, full, 'incremental ≠ full rebuild');
@@ -148,8 +148,68 @@ test('gate 5 — regen with the fixture timestamp reproduces the hand-authored d
   const files = walkCorpus(FIXTURE_DIR);
   const facts = extractFacts(FIXTURE_DIR, files, schemas);
   const prev = fs.readFileSync(path.join(FIXTURE_DIR, 'DASHBOARD.md'), 'utf8');
-  const opts = { now: '2026-07-05T17:30', protocolRaw: '"0.4.4"', generator: 'hand-authored-fixture' };
+  const opts = { now: '2026-07-05T17:30', protocolRaw: '"0.4.6"', generator: 'hand-authored-fixture' };
   assert.equal(regenIncremental(facts, prev, opts), prev, 'regen does not reproduce the fixture dashboard');
+});
+
+test('gate 5 — re-parenting is an observed transition: entry leaves, then returns, never lost or duplicated', () => {
+  const tmp = copyFixture();
+  const schemas = SchemaSet.load(tmp);
+  const rel = 'tasks/staging-db-migration-2026q3.md';
+  const abs = path.join(tmp, rel);
+  const original = fs.readFileSync(abs, 'utf8');
+
+  // re-parent under a task (goal → task) with a touch newer than `generated`
+  fs.writeFileSync(
+    abs,
+    original
+      .replace('parent: goals/q3-deploy-pipeline-2026q3', 'parent: tasks/railway-predeploy-hook-2026q3')
+      .replace(/^updated: .*$/m, 'updated: 2026-07-05T18:00'),
+    'utf8',
+  );
+  const prev = fs.readFileSync(path.join(tmp, 'DASHBOARD.md'), 'utf8');
+  const opts = { now: '2026-07-05T18:30', protocolRaw: '"0.4.6"', generator: 'arbiter-cli' };
+  const facts1 = extractFacts(tmp, walkCorpus(tmp), schemas);
+  const afterHide = regenIncremental(facts1, prev, opts);
+  assert.equal(regenFull(facts1, prev, opts), afterHide, 'incremental ≠ full after re-parenting');
+  assert.ok(!afterHide.includes(rel), 'sub-item entry must leave the card');
+  assert.match(afterHide, /## Tasks \(3\)/, 'card count must exclude the sub-item');
+
+  // re-parent back to the goal: the entry returns exactly once
+  fs.writeFileSync(
+    abs,
+    original.replace(/^updated: .*$/m, 'updated: 2026-07-05T19:00'),
+    'utf8',
+  );
+  const opts2 = { now: '2026-07-05T19:30', protocolRaw: '"0.4.6"', generator: 'arbiter-cli' };
+  const facts2 = extractFacts(tmp, walkCorpus(tmp), schemas);
+  const afterReturn = regenIncremental(facts2, afterHide, opts2);
+  assert.equal(regenFull(facts2, afterHide, opts2), afterReturn, 'incremental ≠ full after return');
+  const occurrences = afterReturn.split(rel).length - 1;
+  assert.equal(occurrences, 1, 'returning entry must appear exactly once');
+  assert.match(afterReturn, /## Tasks \(4\)/);
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('nesting: sub-item staged counts roll up onto the top-level ancestor entry', () => {
+  const schemas = SchemaSet.load(FIXTURE_DIR);
+  const facts = extractFacts(FIXTURE_DIR, walkCorpus(FIXTURE_DIR), schemas);
+  const prev = fs.readFileSync(path.join(FIXTURE_DIR, 'DASHBOARD.md'), 'utf8');
+  const out = regenFull(facts, prev, { now: '2026-07-05T17:30', protocolRaw: '"0.4.6"', generator: 'hand-authored-fixture' });
+  assert.match(out, /\(1 staged\) Railway pre-deploy hook/, 'parent entry must carry the sub-task proposal count');
+  assert.ok(!out.includes('predeploy-rollback-verify'), 'sub-task itself stays off tier 1');
+});
+
+test('queries: active mirrors tier-1 membership; children derives the forward pointer', async () => {
+  const { activeSet, children } = await import('../src/core/queries.js');
+  const schemas = SchemaSet.load(FIXTURE_DIR);
+  const db = buildIndex(extractFacts(FIXTURE_DIR, walkCorpus(FIXTURE_DIR), schemas));
+  const active = activeSet(db, 'tasks').map((r) => r.ref);
+  assert.ok(!active.includes('tasks/predeploy-rollback-verify-2026q3'), 'sub-task must not be in the active set');
+  assert.ok(active.includes('tasks/railway-predeploy-hook-2026q3'));
+  const kids = children(db, 'tasks/railway-predeploy-hook-2026q3').map((r) => r.ref);
+  assert.deepEqual(kids, ['tasks/predeploy-rollback-verify-2026q3']);
+  db.close();
 });
 
 test('validator: the fixture corpus is green (raw file warns, never errors)', () => {

@@ -59,6 +59,12 @@ Prefer `arbiter new <type> "<title>"` — it enforces slug forms
 immutable; files never move; refs are permanent `<dir>/<id>` object refs.
 Read `types/<type>.md` before writing a type for the first time in a session.
 
+Sub-tasks: `parent:` may name another task — the child then stays off the
+dashboard and is reached through its parent (`arbiter query children
+<dir>/<id>`; the child list is derived, never stored in the parent). Keep
+nesting to one level, and give the parent a `see:` link to a load-bearing
+child from the checklist step it serves (PROTOCOL.md#tier-2).
+
 ## Capturing a session's work
 
 When the user asks to capture, log, or track work — and always, unprompted,

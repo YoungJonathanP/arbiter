@@ -25,7 +25,7 @@ test('serve: dashboard, item, doc, dir, protocol and raw routes render', async (
     const dash = await (await fetch(`${base}/`)).text();
     assert.match(dash, /Onboarding doc refresh/);
     assert.match(dash, /2 staged/);
-    assert.match(dash, /protocol <b>0\.4\.4<\/b>/);
+    assert.match(dash, /protocol <b>0\.4\.6<\/b>/);
 
     const item = await (await fetch(`${base}/item/tasks/staging-db-migration-2026q3`)).text();
     assert.match(item, /Staging DB migration/);
@@ -43,6 +43,29 @@ test('serve: dashboard, item, doc, dir, protocol and raw routes render', async (
 
     const protocol = await (await fetch(`${base}/protocol`)).text();
     assert.match(protocol, /Arbiter agent protocol/);
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('serve: a parent task nests its sub-tasks; the sub-task stays off the dashboard card', async () => {
+  const dir = copyFixture();
+  await withServer(dir, async (base) => {
+    const parent = await (await fetch(`${base}/item/tasks/railway-predeploy-hook-2026q3`)).text();
+    assert.match(parent, /Sub-tasks · derived/);
+    assert.match(parent, /href="\/item\/tasks\/predeploy-rollback-verify-2026q3"/);
+    assert.match(parent, /1 staged/); // child's pending proposal visible from the parent
+
+    const child = await (await fetch(`${base}/item/tasks/predeploy-rollback-verify-2026q3`)).text();
+    assert.match(child, /Pre-deploy rollback verification/);
+    assert.match(child, /1 staged proposal\(s\) pending/);
+
+    const dash = await (await fetch(`${base}/`)).text();
+    // tier-1 card: parent carries the rolled-up flag; the sub-task has no card entry
+    assert.match(dash, /class="nav-item sub"/); // sidenav nests it instead
+    assert.ok(
+      !/class="card-item[^"]*"><a href="\/item\/tasks\/predeploy-rollback-verify-2026q3"/.test(dash),
+      'sub-task must not be a dashboard card entry',
+    );
   });
   fs.rmSync(dir, { recursive: true, force: true });
 });

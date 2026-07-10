@@ -14,7 +14,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as path from 'node:path';
 import { listStaged, stagedDirFor, walkCorpus } from '../core/corpus.js';
-import { extractFacts, isTerminal, type ItemFacts } from '../core/facts.js';
+import { computeNesting, extractFacts, isTerminal, type ItemFacts } from '../core/facts.js';
 import { fmGet } from '../core/fm.js';
 import { ITEM_DIRS } from '../core/model.js';
 import { parseDashboard, parseItemFile, parseProposal } from '../core/parse.js';
@@ -158,6 +158,7 @@ const CSS = `
   .nav-item .n-title { overflow:hidden; text-overflow:ellipsis; }
   .nav-item:hover { background:var(--panel-hover); text-decoration:none; }
   .nav-item.active { color:var(--accent); background:var(--accent-soft); }
+  .nav-item.sub { padding-left:32px; }
   .nav-sep { border:none; border-top:1px solid var(--line); margin:10px 10px; }
   main { flex:1; min-width:0; }
 
@@ -236,6 +237,20 @@ const CSS = `
                       text-decoration-color:color-mix(in srgb, var(--blocked) 40%, transparent); }
   .check .c-links { display:block; font-size:12.5px; margin-top:2px; }
 
+  .subitems { list-style:none; margin:0; padding:0; border:1px solid var(--line); border-radius:8px;
+              background:var(--panel); overflow:hidden; }
+  .subitem a { display:flex; align-items:baseline; gap:10px; padding:10px 14px; color:var(--ink);
+               border-bottom:1px solid var(--line); }
+  .subitem:last-child a { border-bottom:none; }
+  .subitem a:hover { background:var(--panel-hover); text-decoration:none; }
+  .subitem .dot { align-self:center; }
+  .subitem .s-title { font-weight:600; font-size:14px; flex:none; }
+  .subitem.is-done .s-title { color:var(--muted); }
+  .subitem .s-sum { color:var(--muted); font-size:13px; flex:1; min-width:0;
+                    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .subitem .s-go { color:var(--faint); flex:none; }
+  .sub-hint { font-size:12px; color:var(--faint); margin-left:8px; }
+
   .link-rows { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
   .link-row { display:flex; align-items:baseline; gap:10px; }
   .tag { font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
@@ -309,13 +324,23 @@ const LEGEND = `<span class="legend" aria-label="Status legend">
 </span>`;
 
 function sidenav(facts: ItemFacts[], activePath: string): string {
+  const nest = computeNesting(facts);
+  const navRow = (f: ItemFacts, sub: boolean) =>
+    `<a class="nav-item${sub ? ' sub' : ''}${activePath === `/item/${f.dir}/${f.id}` ? ' active' : ''}" href="/item/${esc(f.dir)}/${esc(f.id)}">
+             ${dot(f.status)}<span class="n-title">${esc(f.title)}</span></a>`;
   const groups = ITEM_DIRS.map((d) => {
     const items = facts.filter((f) => f.dir === d && !f.archived);
+    // top-level items in order, each followed by its nested sub-items
     const rows = items
+      .filter((f) => !nest.isSub(f.ref))
       .map(
         (f) =>
-          `<a class="nav-item${activePath === `/item/${f.dir}/${f.id}` ? ' active' : ''}" href="/item/${esc(f.dir)}/${esc(f.id)}">
-             ${dot(f.status)}<span class="n-title">${esc(f.title)}</span></a>`,
+          navRow(f, false) +
+          nest
+            .childrenOf(f.ref)
+            .filter((c) => c.dir === d && !c.archived)
+            .map((c) => navRow(c, true))
+            .join(''),
       )
       .join('');
     const active = activePath.startsWith(`/item/${d}/`) || activePath === `/dir/${d}`;
@@ -554,12 +579,28 @@ export function createArbiterServer(dataDir: string): http.Server {
       stagedHtml = `<div class="banner"><b>${staged.length} staged proposal(s) pending</b> — arbitrate before other work (<code>arbiter arbitrate ${esc(dir)}/${esc(id)}</code>)</div>${rendered}`;
     }
 
+    // nested sub-items: derived from the children's parent refs, never stored
+    const nest = computeNesting(facts);
+    const kids = nest.childrenOf(`${dir}/${id}`).filter((c) => c.dir === dir);
+    const subLabel = dir === 'tasks' ? 'Sub-tasks' : dir === 'goals' ? 'Sub-goals' : 'Sub-items';
+    const subHtml = kids.length
+      ? `<section class="block"><div class="block-label">${subLabel} · derived</div><ul class="subitems">${kids
+          .map(
+            (c) => `<li class="subitem${isTerminal(c.status) ? ' is-done' : ''}"><a href="/item/${esc(c.dir)}/${esc(c.id)}">${dot(c.status)}
+              <span class="s-title">${esc(c.title)}</span>
+              ${c.stagedCount ? `<span class="staged-chip">${c.stagedCount} staged</span>` : ''}
+              <span class="s-sum">${esc(c.summaryFirst ?? '')}</span><span class="s-go">→</span></a></li>`,
+          )
+          .join('')}</ul></section>`
+      : '';
+
     const body = `
       ${crumbs([{ label: 'Dashboard', href: '/' }, { label: dir, href: `/dir/${esc(dir)}` }, { label: id }])}
       <div class="view-head">${statusPill(fmGet(ast.fm, 'status'))}<h1>${esc(title)}</h1></div>
       <div class="item-meta">${meta.join('')}</div>
       ${rawNote}${stagedHtml}
       ${ast.sections.map(renderSection).join('')}
+      ${subHtml}
       ${agentView(rel, text)}`;
     return page(title, `/item/${dir}/${id}`, facts, body, dashStamp());
   };
@@ -580,6 +621,8 @@ export function createArbiterServer(dataDir: string): http.Server {
   };
 
   const renderDir = (facts: ItemFacts[], dir: string): string => {
+    const nest = computeNesting(facts);
+    const byRef = new Map(facts.map((f) => [f.ref, f]));
     const all = facts
       .filter((f) => f.dir === dir)
       .sort((a, b) => ((a.date ?? a.updatedDate ?? '') < (b.date ?? b.updatedDate ?? '') ? 1 : -1));
@@ -589,6 +632,7 @@ export function createArbiterServer(dataDir: string): http.Server {
       <a class="row${f.status ? '' : ' no-status'}" href="/item/${esc(f.dir)}/${esc(f.id)}">
         ${f.status ? statusPill(f.status) : ''}
         <span class="r-main"><span class="r-title">${esc(f.title)}</span>
+          ${nest.isSub(f.ref) ? `<span class="sub-hint">↳ ${esc(byRef.get(f.parent!)?.title ?? f.parent!)}</span>` : ''}
           ${f.stagedCount ? `<span class="staged-chip">${f.stagedCount} staged</span>` : ''}
           ${f.archived ? `<span class="archived-flag">archived ${esc(f.archived)}</span>` : ''}</span>
         <span class="r-when">${esc(f.date ?? f.updatedDate ?? '')}</span></a>`;

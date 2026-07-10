@@ -24,11 +24,23 @@ function loadConflict(dir: string): { item: string; proposals: ProposalInput[] }
   return { item, proposals };
 }
 
-test('fixture invariant: staged base hashes match the item bytes', () => {
-  const { item, proposals } = loadConflict(path.join(REPO_ROOT, 'fixtures', 'arbiter-data'));
-  for (const p of proposals) {
-    assert.ok(p.text.includes(`base: sha256:${sha256(item)}`), `${p.filename}: base hash out of date`);
+test('fixture invariant: staged base hashes match the item bytes (every .staged/ dir)', () => {
+  const fixtures = path.join(REPO_ROOT, 'fixtures', 'arbiter-data');
+  let checked = 0;
+  for (const dir of ['tasks', 'goals', 'meetings', 'journal', 'accomplishments']) {
+    const dirAbs = path.join(fixtures, dir);
+    if (!fs.existsSync(dirAbs)) continue;
+    for (const entry of fs.readdirSync(dirAbs)) {
+      if (!entry.endsWith('.staged')) continue;
+      const item = fs.readFileSync(path.join(dirAbs, `${entry.replace(/\.staged$/, '')}.md`), 'utf8');
+      for (const p of fs.readdirSync(path.join(dirAbs, entry)).filter((f) => f.endsWith('.md'))) {
+        const text = fs.readFileSync(path.join(dirAbs, entry, p), 'utf8');
+        assert.ok(text.includes(`base: sha256:${sha256(item)}`), `${dir}/${entry}/${p}: base hash out of date`);
+        checked++;
+      }
+    }
   }
+  assert.ok(checked >= 3, 'expected the onboarding pair plus the nested sub-task proposal');
 });
 
 test('regression oracle: arbitration matches the spec-derived expected bytes', () => {

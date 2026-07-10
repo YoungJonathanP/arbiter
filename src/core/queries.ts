@@ -24,15 +24,30 @@ export interface ItemRow {
 
 const NON_ARCHIVED = `archived IS NULL`;
 const TERMINAL = `status IN ('done', 'dropped')`;
+// grammar §7 membership: sub-item iff parent resolves to an existing,
+// non-archived item in the same directory — sub-items stay off tier 1
+const TOP_LEVEL = `NOT EXISTS (
+  SELECT 1 FROM items p WHERE p.ref = items.parent AND p.dir = items.dir AND p.archived IS NULL
+)`;
 
-/** Relevance-ordered active set for a work-item dir (active-first). */
+/** Relevance-ordered active set for a work-item dir: top-level items only (mirrors the tier-1 card). */
 export function activeSet(db: IndexDb, dir: string): ItemRow[] {
   return db
     .prepare(
-      `SELECT * FROM items WHERE dir = ? AND ${NON_ARCHIVED}
+      `SELECT * FROM items WHERE dir = ? AND ${NON_ARCHIVED} AND ${TOP_LEVEL}
        ORDER BY (CASE WHEN ${TERMINAL} THEN 1 ELSE 0 END), updated DESC, ref`,
     )
     .all(dir) as ItemRow[];
+}
+
+/** Direct children of an item, derived from the children's parent refs (never stored). */
+export function children(db: IndexDb, ref: string): ItemRow[] {
+  return db
+    .prepare(
+      `SELECT * FROM items WHERE parent = ?
+       ORDER BY (CASE WHEN ${TERMINAL} THEN 1 ELSE 0 END), updated DESC, ref`,
+    )
+    .all(ref) as ItemRow[];
 }
 
 /** Recency page for a record dir (recent-first, 10 per page, archived skipped). */

@@ -6,7 +6,7 @@ status: in-flight
 parent: goals/q3-deploy-pipeline-2026q3
 started: 2026-06-26
 eta: 2026-07-10
-updated: 2026-07-05T09:40
+updated: 2026-07-05T15:12
 ---
 
 # Railway pre-deploy hook
@@ -19,6 +19,7 @@ Migration guard script is written and merged; wiring it into the Railway pre-dep
 - [x] write migration guard script
 - [~] wire guard into railway.json pre-deploy
 - [ ] verify rollback path on failed migration
+      see: [Pre-deploy rollback verification](tasks/predeploy-rollback-verify-2026q3.md)
 
 ## Artifacts
 - pr: [platform#214 — migration guard script](https://github.com/example/platform/pull/214)
