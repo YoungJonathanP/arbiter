@@ -4,6 +4,9 @@
 
 Arbiter is an agentic knowledge-base tool that captures the work you perform and renders it as progressively disclosed summaries — inspectable by humans at a glance, and by agents with minimal context. It tracks what's done, what's in flight, what's blocked (and by what), and builds the attestation trail that proves your impact when review season comes.
 
+![Tier-1 dashboard rendered by arbiter serve](docs/img/dashboard.png)
+*The tier-1 dashboard (`arbiter serve`, live data): card board with relevance ordering, status legend, freshness stamps, collapsible fast-nav. Light and dark themes follow the system.*
+
 ## Mission
 
 Build, track and create hi-fidelity datapoints meant to improve daily performance by capturing work performed and rendering impactful, meaningful attestation summaries.
@@ -100,6 +103,12 @@ Bare `arbiter` (no command) defaults to `serve` — the everyday entry point.
 `arbiter serve` starts a **read-only, local-only** web renderer over the data directory — the v0.6 renderer's scaffold, pulled forward so the dogfood trial can validate inputs visually. It renders all three tiers (dashboard cards with status colors and staged flags, item pages with checklists/blockers/artifacts and pending proposals inline, tier-3 docs), plus a *view as agent* link on every page showing the exact file bytes. Every request re-reads the files, so a browser refresh always shows current truth; there is no write path.
 
 **Privacy posture**: the server binds `127.0.0.1` only — the data directory is personal work data and is never exposed to a public audience. (`--host` can override the bind address, loudly, for e.g. a private tailnet; don't.) The GitHub repo is likewise private.
+
+![A blocked item with its blocker link](docs/img/item-blocked.png)
+*Tier 2, a blocked task: the `[!]` step carries its `blocked-by:` link into the goal's anchored milestone; artifacts are typed links.*
+
+![A contended item with two staged proposals](docs/img/item-staged.png)
+*The arbitration surface (fixture corpus): two agents staged competing intents against the same base — one closing the task with PR evidence, one blocking it on a migration. The banner names the exact command; each proposal shows its ops and its why. `arbiter arbitrate` resolves this deterministically.*
 
 Every command takes `--data <dir>` (default: `./arbiter-data`) and `--now <YYYY-MM-DDTHH:MM>` (for deterministic runs; defaults to wall clock). CI runs `npm test` plus `arbiter validate` over both the fixture corpus and the live dogfood directory.
 
