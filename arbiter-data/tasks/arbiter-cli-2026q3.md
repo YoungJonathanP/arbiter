@@ -6,7 +6,7 @@ status: in-flight
 parent: goals/v0-5-headless-core-2026q3
 created: 2026-07-09
 started: 2026-07-09
-updated: 2026-07-10T00:25
+updated: 2026-07-10T02:20
 ---
 
 # Arbiter CLI
@@ -19,6 +19,7 @@ All v0.5 commands are built and tested: validate, regen (incremental by default)
 - [x] arbitrate is write-then-verify; sticky staging enforced on the CAS path
 - [~] week of dogfood use with agents + CLI only
 - [x] CI runs typecheck, gates, and validate on both corpora
+- [x] global entry: ~/.local/bin wrapper, data-dir resolution from any cwd, bare `arbiter` defaults to serve
 
 ## Artifacts
 - ci: [first green run](https://github.com/YoungJonathanP/arbiter/actions/runs/29076594662)

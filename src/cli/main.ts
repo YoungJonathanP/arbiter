@@ -34,7 +34,10 @@ interface Args {
 }
 
 function parseArgs(argv: string[]): Args {
-  const [cmd = 'help', ...rest] = argv;
+  // bare `arbiter` (or flags only) defaults to serve — visual inspection is
+  // the everyday entry point during the dogfood trial
+  if (argv.length === 0 || argv[0]!.startsWith('--')) argv = ['serve', ...argv];
+  const [cmd = 'serve', ...rest] = argv;
   const positional: string[] = [];
   const flags = new Map<string, string | boolean>();
   for (let i = 0; i < rest.length; i++) {
@@ -372,6 +375,13 @@ function cmdServe(args: Args): void {
   // Overriding the bind address is a deliberate, explicit act.
   const host = typeof args.flags.get('host') === 'string' ? String(args.flags.get('host')) : '127.0.0.1';
   const server = createArbiterServer(dir);
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`http://${host}:${port} is already serving (arbiter serve running?) — open it, or pass --port <n>`);
+      process.exit(1);
+    }
+    throw err;
+  });
   server.listen(port, host, () => {
     console.log(`arbiter serve (read-only) — http://${host}:${port}`);
     console.log(`data: ${dir}`);
@@ -431,6 +441,7 @@ data dir: --data > $ARBITER_DATA > nearest arbiter-data/ walking up from cwd
   write <path> --if-match <sha256|new>  CAS write; content from stdin or --file
   normalize [--dry-run]          liberal → canonical repair pass (idempotent)
   serve [--port 4870]            read-only local renderer for visual inspection (binds 127.0.0.1)
+                                 (default: bare \`arbiter\` runs serve)
   hash <path>                    sha256 of a file, for --if-match`);
 }
 

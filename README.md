@@ -93,6 +93,8 @@ arbiter serve [--port 4870]      # read-only local renderer (visual inspection)
 arbiter hash <path>              # sha256 for the --if-match flow
 ```
 
+Bare `arbiter` (no command) defaults to `serve` — the everyday entry point.
+
 ### Visual inspection (`arbiter serve`)
 
 `arbiter serve` starts a **read-only, local-only** web renderer over the data directory — the v0.6 renderer's scaffold, pulled forward so the dogfood trial can validate inputs visually. It renders all three tiers (dashboard cards with status colors and staged flags, item pages with checklists/blockers/artifacts and pending proposals inline, tier-3 docs), plus a *view as agent* link on every page showing the exact file bytes. Every request re-reads the files, so a browser refresh always shows current truth; there is no write path.
