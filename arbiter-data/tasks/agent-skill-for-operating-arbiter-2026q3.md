@@ -3,10 +3,10 @@ id: agent-skill-for-operating-arbiter-2026q3
 type: task
 title: Agent skill for operating Arbiter
 status: done
-parent: goals/v0-5-headless-core-2026q3
+parent: tasks/arbiter-trial-2026q3
 created: 2026-07-10
 started: 2026-07-10
-updated: 2026-07-10T02:00
+updated: 2026-07-10T15:15
 ---
 
 # Agent skill for operating Arbiter

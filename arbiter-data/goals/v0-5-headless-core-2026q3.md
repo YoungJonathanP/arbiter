@@ -5,7 +5,8 @@ title: v0.5 headless core
 status: in-flight
 created: 2026-07-09
 started: 2026-07-09
-updated: 2026-07-10T00:25
+eta: 2026-07-23
+updated: 2026-07-10T15:35
 ---
 
 # v0.5 headless core
@@ -18,7 +19,8 @@ Ship the headless core — library + CLI over the v0.4.4 contract — and start 
 - [x] core library: parser, serializer, normalizer, schemas-as-data, validator
 - [x] conformance gates 1–7 as the property-test suite, fixture as oracle
 - [x] CLI: validate, regen, triage, query, new, arbitrate, write --if-match
-- [~] dogfood week: agents + CLI only, items kept current
+- [~] dogfood trial: agents + CLI only, items kept current (extended to two weeks 2026-07-10; ends 2026-07-23)
+      see: [Arbiter trial](tasks/arbiter-trial-2026q3.md#^dogfood-week)
 - [x] validator green in CI
 
 ## Artifacts

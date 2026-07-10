@@ -3,8 +3,9 @@ id: retire-dev-trial-cli-binding-at-v1-0-2026q3
 type: task
 title: Retire dev-trial CLI binding at v1.0
 status: todo
+parent: tasks/arbiter-trial-2026q3
 created: 2026-07-10
-updated: 2026-07-10T02:50
+updated: 2026-07-10T15:15
 ---
 
 # Retire dev-trial CLI binding at v1.0

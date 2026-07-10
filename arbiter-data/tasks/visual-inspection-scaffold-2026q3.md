@@ -3,10 +3,10 @@ id: visual-inspection-scaffold-2026q3
 type: task
 title: Visual inspection scaffold
 status: done
-parent: goals/v0-5-headless-core-2026q3
+parent: tasks/arbiter-trial-2026q3
 created: 2026-07-10
 started: 2026-07-10
-updated: 2026-07-10T01:40
+updated: 2026-07-10T15:15
 ---
 
 # Visual inspection scaffold
