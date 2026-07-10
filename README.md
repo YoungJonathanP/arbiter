@@ -89,8 +89,15 @@ arbiter new <type> <title...>    # create an item (slug form + reopen rule enfor
 arbiter arbitrate <dir>/<id>     # apply/resolve staged proposals (pure, confluent)
 arbiter write <path> --if-match <sha256|new>   # CAS write; content from stdin or --file
 arbiter normalize [--dry-run]    # liberal → canonical repair pass (idempotent)
+arbiter serve [--port 4870]      # read-only local renderer (visual inspection)
 arbiter hash <path>              # sha256 for the --if-match flow
 ```
+
+### Visual inspection (`arbiter serve`)
+
+`arbiter serve` starts a **read-only, local-only** web renderer over the data directory — the v0.6 renderer's scaffold, pulled forward so the dogfood trial can validate inputs visually. It renders all three tiers (dashboard cards with status colors and staged flags, item pages with checklists/blockers/artifacts and pending proposals inline, tier-3 docs), plus a *view as agent* link on every page showing the exact file bytes. Every request re-reads the files, so a browser refresh always shows current truth; there is no write path.
+
+**Privacy posture**: the server binds `127.0.0.1` only — the data directory is personal work data and is never exposed to a public audience. (`--host` can override the bind address, loudly, for e.g. a private tailnet; don't.) The GitHub repo is likewise private.
 
 Every command takes `--data <dir>` (default: `./arbiter-data`) and `--now <YYYY-MM-DDTHH:MM>` (for deterministic runs; defaults to wall clock). CI runs `npm test` plus `arbiter validate` over both the fixture corpus and the live dogfood directory.
 

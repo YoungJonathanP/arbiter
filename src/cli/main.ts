@@ -25,6 +25,7 @@ import { SchemaSet } from '../core/schema.js';
 import { triage } from '../core/triage.js';
 import { validateCorpus } from '../core/validate.js';
 import { TYPE_TO_DIR } from '../core/model.js';
+import { createArbiterServer } from '../web/server.js';
 
 interface Args {
   cmd: string;
@@ -345,6 +346,20 @@ function cmdWrite(args: Args): void {
   console.log(sha256(content));
 }
 
+function cmdServe(args: Args): void {
+  const dir = dataDir(args);
+  const port = Number(args.flags.get('port') ?? 4870);
+  // local-only by design: the data directory is not for a public audience.
+  // Overriding the bind address is a deliberate, explicit act.
+  const host = typeof args.flags.get('host') === 'string' ? String(args.flags.get('host')) : '127.0.0.1';
+  const server = createArbiterServer(dir);
+  server.listen(port, host, () => {
+    console.log(`arbiter serve (read-only) — http://${host}:${port}`);
+    console.log(`data: ${dir}`);
+    if (host !== '127.0.0.1') console.log('warning: bound beyond localhost — this directory is private data');
+  });
+}
+
 function cmdHash(args: Args): void {
   const dir = dataDir(args);
   const target = args.positional[0];
@@ -394,6 +409,7 @@ usage: arbiter <command> [args] [--data <dir>] [--now <YYYY-MM-DDTHH:MM>]
   arbitrate <dir>/<id> [--dry-run]  apply/resolve staged proposals (pure, confluent)
   write <path> --if-match <sha256|new>  CAS write; content from stdin or --file
   normalize [--dry-run]          liberal → canonical repair pass (idempotent)
+  serve [--port 4870]            read-only local renderer for visual inspection (binds 127.0.0.1)
   hash <path>                    sha256 of a file, for --if-match`);
 }
 
@@ -422,6 +438,9 @@ switch (args.cmd) {
     break;
   case 'normalize':
     cmdNormalize(args);
+    break;
+  case 'serve':
+    cmdServe(args);
     break;
   case 'hash':
     cmdHash(args);
