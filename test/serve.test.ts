@@ -70,6 +70,27 @@ test('serve: a parent task nests its sub-tasks; the sub-task stays off the dashb
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('serve: dashboard color-codes each goal and the tasks that roll up to it', async () => {
+  const dir = copyFixture();
+  await withServer(dir, async (base) => {
+    const dash = await (await fetch(`${base}/`)).text();
+    assert.match(dash, /--epic-0:/); // palette defined
+    assert.match(dash, /@media \(prefers-color-scheme: dark\)/); // mode-aware variants
+    const epicOf = (ref: string): string | undefined =>
+      dash.match(new RegExp(`--epic:var\\((--epic-\\d)\\)"><a href="/item/${ref.replace(/\//g, '\\/')}"`))?.[1];
+    const goal = epicOf('goals/q3-deploy-pipeline-2026q3');
+    const task = epicOf('tasks/railway-predeploy-hook-2026q3');
+    assert.ok(goal, 'the active goal is color-coded on the dashboard');
+    assert.equal(task, goal, 'a task rolls up to its owning goal color');
+    // a task with no owning goal stays neutral (no epic style)
+    assert.ok(
+      !/--epic:var\(--epic-\d\)"><a href="\/item\/tasks\/onboarding-doc-refresh-2026q3"/.test(dash),
+      'a goal-less task must not be color-coded',
+    );
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('serve: staged proposals surface on the contended item with their intents', async () => {
   const dir = copyFixture();
   await withServer(dir, async (base) => {

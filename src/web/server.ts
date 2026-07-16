@@ -67,6 +67,37 @@ function dot(status: string | undefined): string {
   return `<i class="dot ${status ? esc(status) : 'logged'}"></i>`;
 }
 
+// epic color coding: each active goal → a stable palette slot; every task that
+// rolls up to it (directly, or through an umbrella task) shares that hue. Refs
+// with no owning goal (or an archived one) get no class — they render neutral.
+const EPIC_COUNT = 10;
+function epicColors(facts: ItemFacts[]): { cls: (ref: string) => string; style: (ref: string) => string } {
+  const byRef = new Map(facts.map((f) => [f.ref, f]));
+  const idx = new Map<string, number>();
+  facts
+    .filter((f) => f.dir === 'goals' && !f.archived)
+    .map((f) => f.ref)
+    .sort()
+    .forEach((ref, i) => idx.set(ref, i % EPIC_COUNT));
+  const owner = (ref: string): number | undefined => {
+    let cur = byRef.get(ref);
+    const seen = new Set<string>();
+    while (cur !== undefined && !seen.has(cur.ref)) {
+      if (cur.dir === 'goals') return idx.get(cur.ref);
+      seen.add(cur.ref);
+      cur = cur.parent !== undefined ? byRef.get(cur.parent) : undefined;
+    }
+    return undefined;
+  };
+  return {
+    cls: (ref) => (owner(ref) !== undefined ? ' epic' : ''),
+    style: (ref) => {
+      const n = owner(ref);
+      return n !== undefined ? ` style="--epic:var(--epic-${n})"` : '';
+    },
+  };
+}
+
 const CSS = `
   :root {
     --bg:#faf9f6; --panel:#ffffff; --panel-hover:#f5f3ee; --ink:#26241f;
@@ -75,6 +106,8 @@ const CSS = `
     --accent:#8a6d26; --accent-soft:#f3ecdb;
     --done:#2e7d4f; --flight:#2563eb; --blocked:#c0392b; --dropped:#c65a11; --needs-review:#7c3aed;
     --todo:#ffffff; --todo-ring:#cfcabd; --todo-mark:#b3ada0; --code-bg:#f4f2ec;
+    --epic-0:#0b6ba8; --epic-1:#b26a00; --epic-2:#067a54; --epic-3:#a83279; --epic-4:#b1400a;
+    --epic-5:#2b6f8c; --epic-6:#6b4bc4; --epic-7:#7a6a00; --epic-8:#b12f52; --epic-9:#4a5b6b;
     --shadow: 0 1px 2px rgba(38,36,31,.05), 0 4px 14px rgba(38,36,31,.05);
     --serif:"Iowan Old Style","Palatino",Georgia,ui-serif,serif;
     --sans:ui-sans-serif,-apple-system,"Segoe UI","Helvetica Neue",sans-serif;
@@ -88,6 +121,8 @@ const CSS = `
       --accent:#c9a45c; --accent-soft:#2a2618;
       --done:#4caf7d; --flight:#6a9bff; --blocked:#e5675f; --dropped:#ef8e4d; --needs-review:#a78bfa;
       --todo:#ffffff; --todo-ring:rgba(255,255,255,.28); --todo-mark:#f0eee8; --code-bg:#191c22;
+      --epic-0:#74b3e0; --epic-1:#e6a94d; --epic-2:#4fb98c; --epic-3:#d98cc0; --epic-4:#ef8a5c;
+      --epic-5:#6fb3cc; --epic-6:#a892e8; --epic-7:#cbb84f; --epic-8:#e07996; --epic-9:#94a6b8;
       --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
     }
   }
@@ -186,6 +221,14 @@ const CSS = `
   .card-more { display:block; padding:9px 16px 11px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); }
   .card-more:hover { background:var(--panel-hover); color:var(--accent); text-decoration:none; }
   .empty { padding:28px 16px; color:var(--faint); text-align:center; font-size:13.5px; }
+
+  /* epic color coding: a goal and every task that rolls up to it share a hue */
+  .card-item.epic > a { box-shadow: inset 3px 0 0 var(--epic); }
+  .card-item.epic .title { color: var(--epic); }
+  .row.epic { box-shadow: inset 3px 0 0 var(--epic); }
+  .row.epic .r-title { color: var(--epic); }
+  .subitem.epic > a { box-shadow: inset 3px 0 0 var(--epic); }
+  .subitem.epic .s-title { color: var(--epic); }
 
   .crumbs { font-size:12.5px; color:var(--faint); margin:2px 0 14px; }
   .crumbs a { color:var(--muted); }
@@ -488,6 +531,7 @@ export function createArbiterServer(dataDir: string): http.Server {
       return page('Dashboard', '/', facts, `<h1>Dashboard</h1><div class="banner">No DASHBOARD.md — run <code>arbiter regen</code>.</div>`, dashStamp());
     }
     const dash = parseDashboard(text);
+    const epic = epicColors(facts);
     const meta = dash.fm
       ? `<div class="board-meta">
            <span>updated <b>${esc(fmGet(dash.fm, 'updated') ?? '?')}</b></span>
@@ -509,7 +553,8 @@ export function createArbiterServer(dataDir: string): http.Server {
             const e = r.entry;
             const staged = e.stagedCount ? `<span class="staged-chip">${e.stagedCount} staged</span>` : '';
             const done = isTerminal(e.status) ? ' is-done' : '';
-            return `<li class="card-item${done}"><a href="${targetHref(e.relPath)}">${dot(e.status)}
+            const eref = e.relPath.replace(/\.md$/, '');
+            return `<li class="card-item${done}${epic.cls(eref)}"${epic.style(eref)}><a href="${targetHref(e.relPath)}">${dot(e.status)}
               <span class="title">${esc(e.title)}</span>${staged}<span class="when">${esc(e.date)}</span></a></li>`;
           })
           .join('');
@@ -581,12 +626,13 @@ export function createArbiterServer(dataDir: string): http.Server {
 
     // nested sub-items: derived from the children's parent refs, never stored
     const nest = computeNesting(facts);
+    const epic = epicColors(facts);
     const kids = nest.childrenOf(`${dir}/${id}`).filter((c) => c.dir === dir);
     const subLabel = dir === 'tasks' ? 'Sub-tasks' : dir === 'goals' ? 'Sub-goals' : 'Sub-items';
     const subHtml = kids.length
       ? `<section class="block"><div class="block-label">${subLabel} · derived</div><ul class="subitems">${kids
           .map(
-            (c) => `<li class="subitem${isTerminal(c.status) ? ' is-done' : ''}"><a href="/item/${esc(c.dir)}/${esc(c.id)}">${dot(c.status)}
+            (c) => `<li class="subitem${isTerminal(c.status) ? ' is-done' : ''}${epic.cls(c.ref)}"${epic.style(c.ref)}><a href="/item/${esc(c.dir)}/${esc(c.id)}">${dot(c.status)}
               <span class="s-title">${esc(c.title)}</span>
               ${c.stagedCount ? `<span class="staged-chip">${c.stagedCount} staged</span>` : ''}
               <span class="s-sum">${esc(c.summaryFirst ?? '')}</span><span class="s-go">→</span></a></li>`,
@@ -622,6 +668,7 @@ export function createArbiterServer(dataDir: string): http.Server {
 
   const renderDir = (facts: ItemFacts[], dir: string): string => {
     const nest = computeNesting(facts);
+    const epic = epicColors(facts);
     const byRef = new Map(facts.map((f) => [f.ref, f]));
     const all = facts
       .filter((f) => f.dir === dir)
@@ -629,7 +676,7 @@ export function createArbiterServer(dataDir: string): http.Server {
     const active = all.filter((f) => !f.archived);
     const archived = all.filter((f) => f.archived);
     const row = (f: ItemFacts) => `
-      <a class="row${f.status ? '' : ' no-status'}" href="/item/${esc(f.dir)}/${esc(f.id)}">
+      <a class="row${f.status ? '' : ' no-status'}${epic.cls(f.ref)}"${epic.style(f.ref)} href="/item/${esc(f.dir)}/${esc(f.id)}">
         ${f.status ? statusPill(f.status) : ''}
         <span class="r-main"><span class="r-title">${esc(f.title)}</span>
           ${nest.isSub(f.ref) ? `<span class="sub-hint">↳ ${esc(byRef.get(f.parent!)?.title ?? f.parent!)}</span>` : ''}
