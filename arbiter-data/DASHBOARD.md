@@ -1,7 +1,7 @@
 ---
-updated: 2026-07-10T15:35
+updated: 2026-07-15T11:20
 generator: arbiter-cli
-generated: 2026-07-10T15:36
+generated: 2026-07-15T11:28
 protocol: "0.4.6"
 ---
 
@@ -13,11 +13,14 @@ protocol: "0.4.6"
 - [done] Core library and conformance gates — 2026-07-09 -> tasks/core-library-and-conformance-gates-2026q3.md
 
 ## Goals (1)
-- [in-flight] v0.5 headless core — 2026-07-10 -> goals/v0-5-headless-core-2026q3.md
+- [in-flight] v0.5 headless trial — 2026-07-15 -> goals/v0-5-headless-core-2026q3.md
 
 ## Meetings (0)
 
-## Journal (2)
+## Journal (5)
+- Trial feedback dashboard color coding — 2026-07-15 -> journal/trial-feedback-dashboard-color-coding.md
+- Trial feedback help shows cli options — 2026-07-15 -> journal/trial-feedback-help-shows-cli-options.md
+- Dogfood install and JFrog lockfile block — 2026-07-10 -> journal/dogfood-install-and-jfrog-lockfile-block.md
 - Protocol 0.4.6 — task nesting and tier-1 membership — 2026-07-10 -> journal/protocol-0-4-6-task-nesting.md
 - v0.5 kickoff — 2026-07-09 -> journal/v0-5-kickoff.md
 

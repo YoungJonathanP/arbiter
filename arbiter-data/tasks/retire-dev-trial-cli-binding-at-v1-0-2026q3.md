@@ -5,7 +5,7 @@ title: Retire dev-trial CLI binding at v1.0
 status: todo
 parent: tasks/arbiter-trial-2026q3
 created: 2026-07-10
-updated: 2026-07-10T15:15
+updated: 2026-07-15T11:20
 ---
 
 # Retire dev-trial CLI binding at v1.0
@@ -17,5 +17,6 @@ Cleanup gated on the v1.0 install story (repo doc docs/launch-plan.md): the dogf
 - [ ] scripts/dev-bind.sh uninstall (removes wrapper + fenced profile blocks)
 - [ ] verify no npm-linked or stray `arbiter` remains on PATH
 - [ ] drop the temp-binding sections from README, CLAUDE.md, and the arbiter skill
+- [ ] remove the provisional `arbiter-trial-feedback` skill (repo .claude/skills/ + the ~/.claude symlink)
 
 <!-- arbiter:tier-2 · PROTOCOL.md#tier-2 · update marks in place; check <id>.staged/ before editing -->
