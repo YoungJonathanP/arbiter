@@ -113,6 +113,23 @@ test('serve: raw human entries render with the pending-normalization banner', as
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('serve: tier 2 and tier 3 views offer the data-relative path for copying; tier 1 does not', async () => {
+  const dir = copyFixture();
+  await withServer(dir, async (base) => {
+    const item = await (await fetch(`${base}/item/tasks/staging-db-migration-2026q3`)).text();
+    assert.match(item, /class="copy-path" data-copy="tasks\/staging-db-migration-2026q3\.md"/);
+
+    const doc = await (await fetch(`${base}/doc/tasks/railway-predeploy-hook-2026q3/rollout-plan`)).text();
+    assert.match(doc, /class="copy-path" data-copy="tasks\/railway-predeploy-hook-2026q3\/rollout-plan\.md"/);
+
+    for (const route of ['/', '/dir/tasks', '/protocol']) {
+      const html = await (await fetch(`${base}${route}`)).text();
+      assert.ok(!html.includes('class="copy-path"'), `${route} must not carry the copy affordance`);
+    }
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('serve: HTML is escaped and path traversal is refused', async () => {
   const dir = copyFixture();
   // plant an item whose prose tries to inject markup
@@ -130,6 +147,69 @@ test('serve: HTML is escaped and path traversal is refused', async () => {
     assert.equal(traversal.status, 404);
     const abs = await fetch(`${base}/raw/%2Fetc%2Fhosts`);
     assert.equal(abs.status, 404);
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('serve: prose renders inline markdown and reflows hard-wrapped source lines', async () => {
+  const dir = copyFixture();
+  // Files are hard-wrapped for editing, so an emphasis span routinely straddles a
+  // source newline and a paragraph's line breaks are soft.
+  fs.writeFileSync(
+    `${dir}/journal/markdown-prose.md`,
+    [
+      '# Markdown prose',
+      '',
+      '## Summary',
+      'Define a **uniformity',
+      'template** and an *audit skill*; `**not bold**` stays literal and',
+      'MORTGAGE_MARKETPLACE_CLIENT keeps its underscores.',
+      '',
+      '- first **bullet**',
+      '- second bullet, wrapped',
+      '  onto a continuation line',
+      '',
+      '1. ordered one',
+      '2. ordered two',
+      '',
+      '### Section H',
+      'body under the heading',
+      '',
+      '> quoted claim, wrapped',
+      '> onto a second line',
+      '',
+    ].join('\n'),
+  );
+  await withServer(dir, async (base) => {
+    const item = await (await fetch(`${base}/item/journal/markdown-prose`)).text();
+    assert.match(item, /Define a <strong>uniformity template<\/strong>/); // emphasis survives the wrap
+    assert.match(item, /an <em>audit skill<\/em>/);
+    assert.match(item, /<code>\*\*not bold\*\*<\/code>/); // code spans are not emphasis
+    assert.match(item, /MORTGAGE_MARKETPLACE_CLIENT/);
+    assert.ok(!/MORTGAGE<em>/.test(item), 'snake_case must not become emphasis');
+    assert.ok(!item.includes('<br>'), 'soft line breaks must reflow, not hard-break');
+    assert.match(item, /<ul class="prose-list"><li>first <strong>bullet<\/strong><\/li>/);
+    assert.match(item, /<li>second bullet, wrapped onto a continuation line<\/li><\/ul>/);
+    assert.match(item, /<ol class="prose-list"><li>ordered one<\/li><li>ordered two<\/li><\/ol>/);
+    // an in-prose heading breaks the block instead of absorbing the text after it
+    assert.match(item, /<h5 class="prose-h">Section H<\/h5><p class="summary-text">body under the heading<\/p>/);
+    assert.match(item, /<blockquote class="prose-quote">quoted claim, wrapped onto a second line<\/blockquote>/);
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('serve: wikilinks resolve to the file they name, or degrade to plain text', async () => {
+  const dir = copyFixture();
+  fs.writeFileSync(
+    `${dir}/journal/wikilink-prose.md`,
+    ['# Wikilink prose', '', '## Summary', 'Detail in [[railway-predeploy-hook-2026q3]] and [[rollout-plan]]; owner [[Dana]].', ''].join('\n'),
+  );
+  await withServer(dir, async (base) => {
+    const item = await (await fetch(`${base}/item/journal/wikilink-prose`)).text();
+    assert.match(item, /<a href="\/item\/tasks\/railway-predeploy-hook-2026q3">railway-predeploy-hook-2026q3<\/a>/);
+    assert.match(item, /<a href="\/doc\/tasks\/railway-predeploy-hook-2026q3\/rollout-plan">rollout-plan<\/a>/);
+    assert.match(item, /owner Dana\./); // no target: bare text, never brackets
+    assert.ok(!/\[\[/.test(item.split('<details class="agent">')[0]!), 'no raw wikilink brackets in the rendered body');
   });
   fs.rmSync(dir, { recursive: true, force: true });
 });

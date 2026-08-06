@@ -46,15 +46,197 @@ function targetHref(target: string): string {
   return `/raw/${esc(p ?? '')}`;
 }
 
-/** Escape, then turn md-links into anchors and backtick spans into <code>. */
-function prose(line: string): string {
-  let s = esc(line);
+/** Bare file id → data-relative path, for resolving `[[wikilink]]` prose refs. */
+export type WikiIndex = Map<string, string>;
+
+/**
+ * Index every item and doc by its bare id. An id claimed by two files is dropped
+ * rather than guessed at- an ambiguous ref renders as text, which is honest.
+ */
+function buildWikiIndex(files: { kind: string; relPath: string }[]): WikiIndex {
+  const idx: WikiIndex = new Map();
+  const ambiguous = new Set<string>();
+  for (const f of files) {
+    if (f.kind !== 'item' && f.kind !== 'doc') continue;
+    const id = f.relPath.slice(f.relPath.lastIndexOf('/') + 1).replace(/\.md$/, '');
+    if (idx.has(id)) ambiguous.add(id);
+    else idx.set(id, f.relPath);
+  }
+  for (const id of ambiguous) idx.delete(id);
+  return idx;
+}
+
+// Code spans are parked under a sentinel while the rest of the inline pass runs;
+// U+0000 cannot appear in a markdown source file, so nothing can forge a slot.
+const SENTINEL = '\u0000';
+const CODE_SLOT_RE = /\u0000(\d+)\u0000/g;
+
+/**
+ * Inline markdown for one logical line of prose: escape, lift code spans out of
+ * the way, then links and emphasis. Code spans are extracted first and restored
+ * last so `**not bold**` inside backticks stays literal, the way an author
+ * quoting markdown syntax expects.
+ */
+function prose(line: string, wiki?: WikiIndex): string {
+  const codes: string[] = [];
+  let s = esc(line).replace(/`([^`]+)`/g, (_m, body: string) => {
+    codes.push(body);
+    return `${SENTINEL}${codes.length - 1}${SENTINEL}`;
+  });
   s = s.replace(/\[([^\]]*)\]\(([^)\s][^)]*)\)/g, (_m, label: string, target: string) => {
     const ext = /^https?:\/\//.test(target);
     return `<a href="${targetHref(target)}"${ext ? ' target="_blank" rel="noopener"' : ''}>${label}</a>`;
   });
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
-  return s;
+  // `[[bare-id]]` is the old graph's idiom, still written by agents out of habit:
+  // link it when the id resolves to exactly one file, else show the bare label.
+  s = s.replace(/\[\[([^[\]|]+)\]\]/g, (_m, id: string) => {
+    const target = wiki?.get(id.trim());
+    return target !== undefined ? `<a href="${targetHref(target)}">${id}</a>` : id;
+  });
+  s = s.replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<del>$1</del>');
+  s = s.replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/(^|[^\w*])\*(?=\S)([^*]*?\S)\*(?![\w*])/g, '$1<em>$2</em>');
+  s = s.replace(/(^|[^\w_])_(?=\S)([^_]*?\S)_(?![\w_])/g, '$1<em>$2</em>');
+  return s.replace(CODE_SLOT_RE, (_m, i: string) => `<code>${codes[Number(i)]}</code>`);
+}
+
+/**
+ * Markdown stripped to plain text, for the one-line previews that already sit
+ * inside a link or a clipped row- markup there would nest an anchor in an
+ * anchor, so the syntax is dropped rather than rendered.
+ */
+function plainInline(line: string): string {
+  return esc(
+    line
+      .replace(/\[([^\]]*)\]\(([^)\s][^)]*)\)/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/(\*\*|~~|\*|_)(?=\S)([\s\S]*?\S)\1/g, '$2'),
+  );
+}
+
+const BULLET_RE = /^[-*+] +(.*)$/;
+const ORDERED_RE = /^\d+[.)] +(.*)$/;
+const HEADING_RE = /^(#{1,6}) +(.*)$/;
+const QUOTE_RE = /^> ?(.*)$/;
+const TABLE_ROW_RE = /^\|(.*)\|\s*$/;
+const TABLE_RULE_RE = /^\|[\s:|-]+\|\s*$/;
+
+/** Split a `| a | b |` row into its cells. */
+function tableCells(line: string): string[] {
+  return TABLE_ROW_RE.exec(line)![1]!.split('|').map((c) => c.trim());
+}
+
+/**
+ * Block-level prose: headings, paragraphs, bullet/ordered lists, blockquotes and
+ * fenced code. Within a paragraph, list item or quote, source newlines are SOFT-
+ * the files are hard-wrapped for editing, so joining with a space is what reflows
+ * the text and what lets an emphasis span survive a wrap
+ * (`**uniformity\ntemplate**`). Blank lines and block starts are the real breaks.
+ */
+function proseBlocks(lines: string[], cls: string, wiki?: WikiIndex): string {
+  const out: string[] = [];
+  let para: string[] = [];
+  let items: string[][] = [];
+  let listTag: 'ul' | 'ol' | null = null;
+  let quote: string[] = [];
+  let rows: string[] = [];
+  let fence: string[] | null = null;
+
+  const flushPara = () => {
+    if (para.length) out.push(`<p class="${cls}">${prose(para.join(' '), wiki)}</p>`);
+    para = [];
+  };
+  const flushList = () => {
+    if (items.length) {
+      out.push(`<${listTag} class="prose-list">${items.map((it) => `<li>${prose(it.join(' '), wiki)}</li>`).join('')}</${listTag}>`);
+    }
+    items = [];
+    listTag = null;
+  };
+  const flushQuote = () => {
+    if (quote.length) out.push(`<blockquote class="prose-quote">${prose(quote.join(' '), wiki)}</blockquote>`);
+    quote = [];
+  };
+  // A leading delimiter row (`|---|---|`) makes the row above it a header; without
+  // one every row is a body row, which is how a half-written table still reads.
+  const flushTable = () => {
+    if (rows.length) {
+      const head = rows.length > 1 && TABLE_RULE_RE.test(rows[1]!) ? rows[0]! : null;
+      const body = rows.filter((r, i) => !TABLE_RULE_RE.test(r) && (head === null || i > 0));
+      const tr = (r: string, tag: 'th' | 'td') =>
+        `<tr>${tableCells(r).map((c) => `<${tag}>${prose(c, wiki)}</${tag}>`).join('')}</tr>`;
+      out.push(
+        `<div class="prose-table-wrap"><table class="prose-table">` +
+          (head !== null ? `<thead>${tr(head, 'th')}</thead>` : '') +
+          `<tbody>${body.map((r) => tr(r, 'td')).join('')}</tbody></table></div>`,
+      );
+    }
+    rows = [];
+  };
+  const flushAll = () => {
+    flushPara();
+    flushList();
+    flushQuote();
+    flushTable();
+  };
+
+  for (const line of lines) {
+    if (fence !== null) {
+      if (/^```/.test(line)) {
+        out.push(`<pre>${esc(fence.join('\n'))}</pre>`);
+        fence = null;
+      } else fence.push(line);
+      continue;
+    }
+    if (/^```/.test(line)) {
+      flushAll();
+      fence = [];
+      continue;
+    }
+    if (line.trim() === '') {
+      flushAll();
+      continue;
+    }
+    if (TABLE_ROW_RE.test(line)) {
+      flushPara();
+      flushList();
+      flushQuote();
+      rows.push(line);
+      continue;
+    }
+    flushTable(); // any other non-blank line ends a table
+    const heading = HEADING_RE.exec(line);
+    if (heading) {
+      flushAll();
+      const level = Math.min(heading[1]!.length + 2, 6); // the item's own h1/h2 own the page
+      out.push(`<h${level} class="prose-h">${prose(heading[2]!, wiki)}</h${level}>`);
+      continue;
+    }
+    const quoted = QUOTE_RE.exec(line);
+    if (quoted) {
+      flushPara();
+      flushList();
+      quote.push(quoted[1]!);
+      continue;
+    }
+    const bullet = BULLET_RE.exec(line.trimStart());
+    const ordered = ORDERED_RE.exec(line.trimStart());
+    if (bullet || ordered) {
+      const tag = bullet ? 'ul' : 'ol';
+      flushPara();
+      flushQuote();
+      if (listTag !== tag) flushList();
+      listTag = tag;
+      items.push([(bullet ?? ordered)![1]!]);
+      continue;
+    }
+    if (quote.length) quote.push(line.trim()); // lazy-continued quote line
+    else if (items.length) items[items.length - 1]!.push(line.trim()); // wrapped list item
+    else para.push(line);
+  }
+  if (fence !== null) out.push(`<pre>${esc(fence.join('\n'))}</pre>`); // unterminated fence
+  flushAll();
+  return out.join('');
 }
 
 function statusPill(status: string | undefined): string {
@@ -233,6 +415,21 @@ const CSS = `
   .crumbs { font-size:12.5px; color:var(--faint); margin:2px 0 14px; }
   .crumbs a { color:var(--muted); }
   .crumbs .sep { margin:0 6px; color:var(--line-strong); }
+
+  /* tier 2 / tier 3 only: hand the file path to an agent in one click */
+  .crumb-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:2px 0 14px; }
+  .crumb-row .crumbs { margin:0; }
+  .copy-path { display:inline-flex; align-items:center; gap:5px; cursor:pointer;
+               font-family:var(--mono); font-size:11px; line-height:1; color:var(--muted);
+               background:var(--panel); border:1px solid var(--line); border-radius:5px; padding:3.5px 6px; }
+  .copy-path:hover { color:var(--accent); border-color:var(--line-strong); background:var(--panel-hover); }
+  .copy-path:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .copy-path .i-ok { display:none; }
+  .copy-path.ok { color:var(--done); border-color:color-mix(in srgb, var(--done) 45%, var(--line)); }
+  .copy-path.ok .i-ok { display:inline; }
+  .copy-path.ok .i-copy { display:none; }
+  .copy-path.fail { color:var(--blocked); border-color:color-mix(in srgb, var(--blocked) 45%, var(--line)); }
+  .copy-path .copy-label:empty { display:none; }
   .view-head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
   .view-head h1 { font-size:24px; }
   .view-sub { color:var(--muted); font-size:13.5px; margin-bottom:18px; }
@@ -260,6 +457,21 @@ const CSS = `
                  color:var(--faint); margin-bottom:9px; font-family:var(--sans); }
   .summary-text { max-width:68ch; font-size:15px; color:var(--ink); margin:0 0 10px; }
   .human-note { max-width:68ch; font-size:12.5px; color:var(--faint); margin:8px 0 0; }
+  .prose-list { max-width:68ch; margin:0 0 10px; padding-left:22px; font-size:15px; color:var(--ink); }
+  .prose-list li { margin:0 0 4px; }
+  .prose-list li::marker { color:var(--faint); }
+  .prose-h { max-width:68ch; font-size:14px; font-weight:700; color:var(--ink); margin:18px 0 8px; }
+  .prose-quote { max-width:68ch; margin:0 0 10px; padding:2px 0 2px 14px; font-size:15px;
+                 color:var(--muted); border-left:3px solid var(--line-strong); }
+  .prose-table-wrap { max-width:100%; overflow-x:auto; margin:0 0 14px; }
+  .prose-table { border-collapse:collapse; font-size:13.5px; color:var(--ink); }
+  .prose-table th, .prose-table td { border:1px solid var(--line); padding:6px 10px; text-align:left;
+                                     vertical-align:top; }
+  .prose-table th { background:var(--panel-hover); font-weight:700; }
+  strong { font-weight:700; } /* colour inherits, so a done row's muted label stays muted */
+  em { font-style:italic; }
+  del { color:var(--muted); text-decoration-color:var(--line-strong); }
+  .proposal-body .summary-text, .proposal-body .prose-list { font-size:13.5px; }
   .banner { border:1px solid var(--blocked); background:color-mix(in srgb, var(--blocked) 8%, transparent);
             color:var(--blocked); border-radius:8px; padding:10px 14px; margin:0 0 16px; font-size:13.5px; }
   .banner code { color:inherit; }
@@ -353,6 +565,44 @@ const NAV_JS = `
   })();
 `;
 
+const COPY_JS = `
+  (function () {
+    function fallback(text) {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+    document.addEventListener('click', function (ev) {
+      var btn = ev.target && ev.target.closest ? ev.target.closest('.copy-path') : null;
+      if (!btn) return;
+      var text = btn.getAttribute('data-copy') || '';
+      var label = btn.querySelector('.copy-label');
+      var settle = function (ok) {
+        btn.classList.remove('ok', 'fail');
+        btn.classList.add(ok ? 'ok' : 'fail');
+        if (label) label.textContent = ok ? 'copied' : 'copy failed';
+        btn.setAttribute('aria-label', (ok ? 'Copied path ' : 'Failed to copy path ') + text);
+        window.clearTimeout(btn._t);
+        btn._t = window.setTimeout(function () {
+          btn.classList.remove('ok', 'fail');
+          if (label) label.textContent = '';
+          btn.setAttribute('aria-label', 'Copy path ' + text);
+        }, 1600);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { settle(true); }, function () { settle(fallback(text)); });
+      } else {
+        settle(fallback(text));
+      }
+    });
+  })();
+`;
+
 const SEAL = `<svg class="seal" width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true">
   <path d="M15 2.5 L26 8.75 L26 21.25 L15 27.5 L4 21.25 L4 8.75 Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
   <circle cx="15" cy="15" r="3.2" fill="currentColor"/></svg>`;
@@ -431,7 +681,7 @@ function page(title: string, activePath: string, facts: ItemFacts[], body: strin
     <main>${body}</main>
   </div>
 </div>
-<script>${NAV_JS}</script></body></html>`;
+<script>${NAV_JS}${COPY_JS}</script></body></html>`;
 }
 
 function crumbs(parts: { label: string; href?: string }[]): string {
@@ -440,7 +690,26 @@ function crumbs(parts: { label: string; href?: string }[]): string {
     .join('<span class="sep">/</span>')}</nav>`;
 }
 
-function renderSection(s: Section): string {
+const COPY_ICON = `<svg class="i-copy" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+  stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M4 11.5H3A1.5 1.5 0 0 1 1.5 10V3A1.5 1.5 0 0 1 3 1.5h7A1.5 1.5 0 0 1 11.5 3v1"/>
+  <rect x="4.5" y="4.5" width="10" height="10" rx="1.5"/></svg>
+<svg class="i-ok" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M3 8.5 6.2 12 13 4.5"/></svg>`;
+
+/** Data-relative path (e.g. `tasks/foo.md`) — what an agent is handed to pick the item up. */
+function copyPathButton(relPath: string): string {
+  return `<button type="button" class="copy-path" data-copy="${esc(relPath)}"
+    title="Copy ${esc(relPath)}" aria-label="Copy path ${esc(relPath)}">${COPY_ICON}<span class="copy-label" aria-hidden="true"></span></button>`;
+}
+
+/** Crumbs plus the copy affordance — tier 2 (item) and tier 3 (doc) views only. */
+function crumbRow(parts: { label: string; href?: string }[], relPath: string): string {
+  return `<div class="crumb-row">${crumbs(parts)}${copyPathButton(relPath)}</div>`;
+}
+
+function renderSection(s: Section, wiki?: WikiIndex): string {
   const label = s.heading === '' ? '' : `<div class="block-label">${esc(s.heading)}</div>`;
   let body: string;
   switch (s.kind) {
@@ -450,15 +719,7 @@ function renderSection(s: Section): string {
         body = `<div class="banner">off-grammar section, preserved verbatim</div><pre>${esc(s.lines.join('\n'))}</pre>`;
         break;
       }
-      const paras: string[][] = [[]];
-      for (const l of s.lines) {
-        if (l === '') paras.push([]);
-        else paras[paras.length - 1]!.push(l);
-      }
-      body = paras
-        .filter((p) => p.length)
-        .map((p) => `<p class="summary-text">${p.map(prose).join('<br>')}</p>`)
-        .join('');
+      body = proseBlocks(s.lines, 'summary-text', wiki);
       break;
     }
     case 'checklist':
@@ -477,7 +738,7 @@ function renderSection(s: Section): string {
               .map((c) => `<a href="${targetHref(c.target)}">${esc(c.label)}</a>`)
               .join(' · ');
             return `<li class="check ${status}"${anchor}><span class="mark" aria-hidden="true">${CHECK_GLYPH[status]}</span>
-              <span class="c-main"><span class="label">${prose(st.text)}</span>${blockers}${sees ? `<span class="c-links">see: ${sees}</span>` : ''}</span></li>`;
+              <span class="c-main"><span class="label">${prose(st.text, wiki)}</span>${blockers}${sees ? `<span class="c-links">see: ${sees}</span>` : ''}</span></li>`;
           })
           .join('') +
         `</ul>`;
@@ -517,6 +778,7 @@ export function createArbiterServer(dataDir: string): http.Server {
   };
 
   const factsNow = (): ItemFacts[] => extractFacts(dataDir, walkCorpus(dataDir), SchemaSet.load(dataDir));
+  const wikiNow = (): WikiIndex => buildWikiIndex(walkCorpus(dataDir));
 
   const dashStamp = (): string => {
     const text = safeRead('DASHBOARD.md');
@@ -572,7 +834,7 @@ export function createArbiterServer(dataDir: string): http.Server {
     return page('Dashboard', '/', facts, body, dashStamp());
   };
 
-  const renderItem = (facts: ItemFacts[], dir: string, id: string): string | null => {
+  const renderItem = (facts: ItemFacts[], wiki: WikiIndex, dir: string, id: string): string | null => {
     const rel = `${dir}/${id}.md`;
     const text = safeRead(rel);
     if (text === null) return null;
@@ -612,12 +874,12 @@ export function createArbiterServer(dataDir: string): http.Server {
           if (ptext === null) return '';
           const p = parseProposal(ptext);
           const ops = p.ops.map((o) => `<li class="check todo"><span class="mark">·</span><span class="c-main"><code>${esc(o.raw)}</code></span></li>`).join('');
-          const body = p.body.filter((l) => l !== '').map(prose).join('<br>');
+          const body = proseBlocks(p.body, 'summary-text', wiki);
           return `<section class="block"><div class="block-label">proposal · ${esc(name)}</div>
             <div class="rows" style="padding:12px 16px">
               <div class="rows-note" style="margin-top:0">by <b>${esc(fmGet(p.fm, 'author') ?? '?')}</b> · ${esc(fmGet(p.fm, 'updated') ?? '')}</div>
               <ul class="checklist" style="border:none">${ops}</ul>
-              <p class="summary-text" style="font-size:13.5px">${body}</p>
+              <div class="proposal-body">${body}</div>
             </div></section>`;
         })
         .join('');
@@ -635,33 +897,36 @@ export function createArbiterServer(dataDir: string): http.Server {
             (c) => `<li class="subitem${isTerminal(c.status) ? ' is-done' : ''}${epic.cls(c.ref)}"${epic.style(c.ref)}><a href="/item/${esc(c.dir)}/${esc(c.id)}">${dot(c.status)}
               <span class="s-title">${esc(c.title)}</span>
               ${c.stagedCount ? `<span class="staged-chip">${c.stagedCount} staged</span>` : ''}
-              <span class="s-sum">${esc(c.summaryFirst ?? '')}</span><span class="s-go">→</span></a></li>`,
+              <span class="s-sum">${plainInline(c.summaryFirst ?? '')}</span><span class="s-go">→</span></a></li>`,
           )
           .join('')}</ul></section>`
       : '';
 
     const body = `
-      ${crumbs([{ label: 'Dashboard', href: '/' }, { label: dir, href: `/dir/${esc(dir)}` }, { label: id }])}
+      ${crumbRow([{ label: 'Dashboard', href: '/' }, { label: dir, href: `/dir/${esc(dir)}` }, { label: id }], rel)}
       <div class="view-head">${statusPill(fmGet(ast.fm, 'status'))}<h1>${esc(title)}</h1></div>
       <div class="item-meta">${meta.join('')}</div>
       ${rawNote}${stagedHtml}
-      ${ast.sections.map(renderSection).join('')}
+      ${ast.sections.map((sec) => renderSection(sec, wiki)).join('')}
       ${subHtml}
       ${agentView(rel, text)}`;
     return page(title, `/item/${dir}/${id}`, facts, body, dashStamp());
   };
 
-  const renderDoc = (facts: ItemFacts[], dir: string, id: string, docId: string): string | null => {
+  const renderDoc = (facts: ItemFacts[], wiki: WikiIndex, dir: string, id: string, docId: string): string | null => {
     const rel = `${dir}/${id}/${docId}.md`;
     const text = safeRead(rel);
     if (text === null) return null;
     const ast = parseItemFile(text); // doc bodies render fine through the section renderer
     const title = ast.title ?? docId;
     const body = `
-      ${crumbs([{ label: 'Dashboard', href: '/' }, { label: dir, href: `/dir/${esc(dir)}` }, { label: id, href: `/item/${esc(dir)}/${esc(id)}` }, { label: docId }])}
+      ${crumbRow(
+        [{ label: 'Dashboard', href: '/' }, { label: dir, href: `/dir/${esc(dir)}` }, { label: id, href: `/item/${esc(dir)}/${esc(id)}` }, { label: docId }],
+        rel,
+      )}
       <div class="view-head"><span class="tag">${esc(fmGet(ast.fm, 'kind') ?? 'doc')}</span><h1>${esc(title)}</h1></div>
       <div class="view-sub">Tier 3 — read-mostly; appends go under a dated heading</div>
-      <div class="doc-body">${ast.sections.map(renderSection).join('')}</div>
+      <div class="doc-body">${ast.sections.map((sec) => renderSection(sec, wiki)).join('')}</div>
       ${agentView(rel, text)}`;
     return page(title, `/doc/${dir}/${id}/${docId}`, facts, body, dashStamp());
   };
@@ -724,11 +989,11 @@ export function createArbiterServer(dataDir: string): http.Server {
         return send(200, renderDir(facts, seg[1]!));
       }
       if (seg[0] === 'item' && seg.length === 3) {
-        const html = renderItem(facts, seg[1]!, seg[2]!);
+        const html = renderItem(facts, wikiNow(), seg[1]!, seg[2]!);
         return html === null ? send(404, page('404', url.pathname, facts, '<h1>No such item</h1>', dashStamp())) : send(200, html);
       }
       if (seg[0] === 'doc' && seg.length === 4) {
-        const html = renderDoc(facts, seg[1]!, seg[2]!, seg[3]!);
+        const html = renderDoc(facts, wikiNow(), seg[1]!, seg[2]!, seg[3]!);
         return html === null ? send(404, page('404', url.pathname, facts, '<h1>No such document</h1>', dashStamp())) : send(200, html);
       }
       return send(404, page('404', url.pathname, facts, '<h1>404</h1><p><a href="/">back to the dashboard</a></p>', dashStamp()));

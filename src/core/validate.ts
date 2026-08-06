@@ -32,6 +32,7 @@ const DATETIME_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2})?([+-]\d{2}:?\d{2}|Z
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const WORK_ID_RE = /^[a-z0-9]+(-[a-z0-9]+)*-\d{4}q[1-4]$/;
 const MEETING_ID_RE = /^[a-z0-9]+(-[a-z0-9]+)*-\d{4}-\d{2}-\d{2}$/;
+const WIKILINK_RE = /\[\[([^[\]|]+)\]\]/g;
 const OBJECT_REF_RE = /^(tasks|goals|meetings|journal|accomplishments)\/[a-z0-9][a-z0-9-]*$/;
 
 export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: SchemaSet): ValidationReport {
@@ -64,6 +65,32 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
     }
     anchorsByPath.set(f.relPath, anchors);
   }
+
+  // `[[bare-id]]` is the old graph's idiom; PROTOCOL has exactly one link form
+  // (a data-root-relative markdown link), so prose carrying one gets nudged- the
+  // rewrite is spelled out whenever the id resolves to a single file.
+  const pathByBareId = new Map<string, string>();
+  const ambiguousIds = new Set<string>();
+  for (const f of files) {
+    if (f.kind !== 'item' && f.kind !== 'doc') continue;
+    const bare = f.relPath.slice(f.relPath.lastIndexOf('/') + 1).replace(/\.md$/, '');
+    if (pathByBareId.has(bare)) ambiguousIds.add(bare);
+    else pathByBareId.set(bare, f.relPath);
+  }
+  const checkWikilinks = (relPath: string, lines: string[], where: string) => {
+    for (const line of lines) {
+      // quoting the syntax in a code span is how it gets discussed, not a use of it
+      for (const m of line.replace(/`[^`]*`/g, '').matchAll(WIKILINK_RE)) {
+        const id = m[1]!.trim();
+        const target = ambiguousIds.has(id) ? undefined : pathByBareId.get(id);
+        warn(
+          relPath,
+          `wikilink in ${where}: [[${id}]] carries no target- PROTOCOL has one link form` +
+            (target !== undefined ? `; write [${id}](${target})` : ' (unresolved id; link it or drop the brackets)'),
+        );
+      }
+    }
+  };
 
   const checkTarget = (relPath: string, target: string, what: string) => {
     if (/^https?:\/\//.test(target)) return;
@@ -189,6 +216,8 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
           if (s.kind === 'prose' && s.heading === 'Summary') {
             if (s.lines.some((l) => l.startsWith('- blocked-by: ') || /^- blocked-by:/.test(l))) summaryBlockedBy = true;
           }
+          if (s.kind === 'prose' && s.heading !== 'Detail docs') checkWikilinks(f.relPath, s.lines, `## ${s.heading}`);
+          if (s.kind === 'checklist') checkWikilinks(f.relPath, s.steps.map((st) => st.text), 'a checklist step');
           if (s.kind === 'links') {
             if (s.heading === 'Evidence' && type !== 'accomplishment')
               warn(f.relPath, '## Evidence outside an accomplishment (grammar §5 expects Artifacts here)');
@@ -220,6 +249,7 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
           warn(f.relPath, 'raw detail doc (valid; normalization repairs it on first touch)');
           break;
         }
+        checkWikilinks(f.relPath, parseItemFile(f.text).sections.flatMap((s) => (s.kind === 'prose' ? s.lines : [])), 'doc prose');
         if (fmGet(ast.fm, 'id') !== stem) err(f.relPath, `doc id ≠ filename stem "${stem}"`);
         const kind = fmGet(ast.fm, 'kind');
         if (kind === undefined || !DOC_KINDS.has(kind)) err(f.relPath, `doc kind invalid: ${kind}`);
