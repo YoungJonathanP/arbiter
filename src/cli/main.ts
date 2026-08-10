@@ -101,7 +101,7 @@ function protocolRaw(dir: string): string {
     const raw = fm ? fmGetRaw(fm.fm, 'version') : undefined;
     if (raw) return raw;
   }
-  return '"0.4.6"';
+  return '"0.4.7"';
 }
 
 function resolveItemPath(dir: string, arg: string): { abs: string; rel: string } {
@@ -429,7 +429,7 @@ function cmdNormalize(args: Args): void {
 }
 
 function help(): void {
-  console.log(`arbiter — headless core for the Arbiter knowledge base (protocol 0.4.6)
+  console.log(`arbiter — headless core for the Arbiter knowledge base (protocol 0.4.7)
 
 usage: arbiter <command> [args] [--data <dir>] [--now <YYYY-MM-DDTHH:MM>]
 

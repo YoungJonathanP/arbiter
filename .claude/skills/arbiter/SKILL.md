@@ -48,6 +48,15 @@ Paths below are relative to that data directory.
   on stdin). A CAS refusal means contention — rebase or stage, never force.
 - **Smallest sufficient edit** (one mark, one field, one appended line) and
   **touch `updated:`** on every write (`YYYY-MM-DDTHH:MM`).
+- **Rows stay summaries — never append narration to a checklist step.**
+  A step carries only what it is, its current state, and the next action
+  (a few lines; load-bearing rules and identifiers may stay). If your update
+  would grow it past that, relocate the detail verbatim into the step's
+  `see:`-linked tier-3 doc (append under a dated heading; create the doc if
+  none fits) and rewrite the row as the summary (PROTOCOL.md#tier-2).
+  Session narration — attempt logs, timestamps, PIDs, command lines — is
+  tier-3 material from the moment it is written, even when each individual
+  append looks small. Repeated in-place appends are how rows rot into logs.
 - High-stakes changes (any transition to/from `done`/`dropped`, reversing a
   <48h-old change) are staged as proposals even when uncontended.
 
@@ -72,7 +81,8 @@ at the end of a session inside the Arbiter repo itself (its development is
 dogfooded):
 
 1. Update every item the work touched: checklist marks in place, honest
-   `status:`, bumped `updated:`.
+   `status:`, bumped `updated:`. Keep each touched row a summary — the
+   session's history goes into the row's `see:`-linked detail doc, not the row.
 2. Append a journal entry for non-obvious findings (`arbiter new journal ...`;
    one line now beats a perfect entry never written).
 3. Closed something? Distill an accomplishment with at least one verifiable
