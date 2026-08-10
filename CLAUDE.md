@@ -18,7 +18,7 @@ validate` green and a regenerated dashboard.
 The `arbiter` CLI works from anywhere: `scripts/dev-bind.sh install` (a
 TEMPORARY dev-trial binding, retired at the v1.0 install story) writes a
 `~/.local/bin/arbiter` wrapper and fenced `ARBITER_DATA` exports into the bash
-profiles. Data-dir resolution is `--data` > `$ARBITER_DATA` > nearest
+and zsh login profiles. Data-dir resolution is `--data` > `$ARBITER_DATA` > nearest
 `arbiter-data/` walking up from cwd. After changing CLI/core source,
 `npm run build` so the wrapper picks it up.
 

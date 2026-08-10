@@ -19,11 +19,11 @@ directory are the truth; agents with file tools are the primary client.
 **Finding it from anywhere:** the `arbiter` CLI is on PATH (a `~/.local/bin`
 wrapper installed by the repo's `scripts/dev-bind.sh` — temporary until the
 v1.0 install story) and resolves the data directory itself: `--data` flag >
-`$ARBITER_DATA` (defaults to `~/Documents/arbiter/arbiter-data`) > the
+`$ARBITER_DATA` (defaults to `~/code/arbiter/arbiter-data`) > the
 nearest `arbiter-data/` walking up from cwd. For direct file-tool access,
-the directory is `"${ARBITER_DATA:-$HOME/Documents/arbiter/arbiter-data}"`.
+the directory is `"${ARBITER_DATA:-$HOME/code/arbiter/arbiter-data}"`.
 If the CLI is missing, run it from the repo: `npm run --silent arbiter --
-<cmd>` in `~/Documents/arbiter`.
+<cmd>` in `~/code/arbiter/arbiter`.
 
 Paths below are relative to that data directory.
 
