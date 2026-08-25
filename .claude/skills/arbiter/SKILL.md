@@ -57,6 +57,11 @@ Paths below are relative to that data directory.
   Session narration — attempt logs, timestamps, PIDs, command lines — is
   tier-3 material from the moment it is written, even when each individual
   append looks small. Repeated in-place appends are how rows rot into logs.
+- **Write every row as a handoff to a session with zero context.** Use full
+  markdown links for PRs, never a bare number; use the GitHub number, never a
+  plan-internal label ("PR 2" -> "builder-contacts PR 73"); state the gate
+  condition inline (what must be true before the step can start); and pick a
+  verb specific enough to act on without reopening the plan.
 - High-stakes changes (any transition to/from `done`/`dropped`, reversing a
   <48h-old change) are staged as proposals even when uncontended.
 
@@ -73,6 +78,19 @@ dashboard and is reached through its parent (`arbiter query children
 <dir>/<id>`; the child list is derived, never stored in the parent). Keep
 nesting to one level, and give the parent a `see:` link to a load-bearing
 child from the checklist step it serves (PROTOCOL.md#tier-2).
+
+**`parent:` or `related:`?** Nesting takes the child off the tier-1 card
+entirely, so choose by what the item *is*, not by how the work arrived:
+
+- A **facet of one ask** - several workstreams that only make sense under one
+  umbrella - gets `parent:`.
+- A **standalone deliverable** that merely came out of another item stays
+  top-level and gets mutual `related:` refs on both sides, plus a mention in
+  the sibling's Summary. If it earns its own card, it keeps its own card.
+
+An item has at most one `parent:`, naming a top-level task or a goal. Reach for
+a **goal** when the workstream runs 3+ weeks, or for a long-running personal or
+professional objective; anything shorter is a task.
 
 ## Capturing a session's work
 
@@ -95,6 +113,9 @@ dogfooded):
 - Guess an ambiguous bare ref — flag it (PROTOCOL.md#normalization).
 - Quote `visibility: private` items into dashboards, reports, or other items.
 - Edit files under `<id>.staged/` that another writer created (arbitrate them).
+- Add a git remote to the data directory. It is local-only by design and holds
+  employer content, while the tool repo's remote is a personal account. The
+  data directory stays a sibling of the repo, never inside it.
 
 ## Inspection
 

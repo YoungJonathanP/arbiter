@@ -30,8 +30,8 @@ The machine-read surface of arbiter-data, specified precisely enough that a vali
 - [x] **Parser + validator** implementing the grammar (now v0.4.5 — writer-determinism patches only). Property tests = grammar §13 gates 1–7, including fixpoint, byte-stable canonical files, index-is-cache, and byte-exact confluent arbitration of the fixture conflict.
 - [x] **Derived index + queries** — relevance ordering, overdue flagging, 7-day age-off, 14-day needs-review, pagination windows, prev-chain forward pointers. Consequences (needs-review, archived) are written back to markdown by triage.
 - [x] **CLI**: `validate`, `regen` (incremental by default), `triage`, `query`, `new <type>`, `arbitrate <item>`, `write --if-match <hash>`, plus `normalize` and `hash`.
-- [x] **Seed real data** — `arbiter-data/` now tracks v0.5 itself (goal + tasks + journal + regenerated DASHBOARD.md); replace/extend with Jonathan's actual current work as the dogfood week proceeds.
-- [ ] **Dogfood from day one** — in progress: Arbiter's own development is tracked in arbiter-data; agent sessions in this repo read PROTOCOL.md and keep items current. Exit: a week of real use.
+- [x] **Seed real data** — the in-repo `arbiter-data/` seeded v0.5 itself (goal + tasks + journal + regenerated DASHBOARD.md), then was superseded by Jonathan's real KB.
+- [ ] **Dogfood from day one** — in progress: Arbiter's own development is tracked in the live KB at `$ARBITER_DATA`, a sibling of this repo since `29f4be2` (2026-08-10); the in-repo `arbiter-data/` is the frozen pre-split corpus CI validates. Agent sessions in this repo read that KB's PROTOCOL.md and keep items current. Exit: a week of real use.
 
 **Exit criteria:** a week of real use with agents + CLI only; DASHBOARD.md regenerates correctly; validator green in CI.
 

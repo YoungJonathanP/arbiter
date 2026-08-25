@@ -19,5 +19,8 @@ jobs:
         run: npm test
       - name: validator green on the fixture corpus
         run: npm run --silent arbiter -- validate --data fixtures/arbiter-data
-      - name: validator green on the live dogfood corpus
+      # The in-repo arbiter-data/ is the FROZEN pre-split dogfood corpus (last
+      # written 2026-07-16), kept as a conformance target. The live KB moved to
+      # a sibling directory outside this repo in 29f4be2 — see CLAUDE.md.
+      - name: validator green on the frozen dogfood corpus
         run: npm run --silent arbiter -- validate --data arbiter-data

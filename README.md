@@ -117,7 +117,7 @@ Bare `arbiter` (no command) defaults to `serve` — the everyday entry point.
 ![A contended item with two staged proposals](docs/img/item-staged.png)
 *The arbitration surface (fixture corpus): two agents staged competing intents against the same base — one closing the task with PR evidence, one blocking it on a migration. The banner names the exact command; each proposal shows its ops and its why. `arbiter arbitrate` resolves this deterministically.*
 
-Every command takes `--data <dir>` (default: `./arbiter-data`) and `--now <YYYY-MM-DDTHH:MM>` (for deterministic runs; defaults to wall clock). CI runs `npm test` plus `arbiter validate` over both the fixture corpus and the live dogfood directory.
+Every command takes `--data <dir>` (default: `./arbiter-data`) and `--now <YYYY-MM-DDTHH:MM>` (for deterministic runs; defaults to wall clock). CI runs `npm test` plus `arbiter validate` over both the fixture corpus and the frozen dogfood corpus in `arbiter-data/`. That in-repo corpus is a conformance target, not the live KB — the live KB lives outside this repo at `$ARBITER_DATA` (see CLAUDE.md).
 
 ## Status
 
