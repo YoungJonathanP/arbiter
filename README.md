@@ -59,6 +59,8 @@ Arbiter is collaborative and headed toward being an application (likely a web ap
 
 ## Getting started
 
+Setting this up on a new machine, or looking for what to work on next? [`HANDOFF.md`](HANDOFF.md) covers fresh-machine setup, the data-directory bootstrap, and current state; [`docs/v0.5-trial-feedback-backlog.md`](docs/v0.5-trial-feedback-backlog.md) holds the 17 open improvements with code pointers.
+
 ### Prerequisites
 
 - **Node.js ≥ 22** (`node --version`) and npm. The repo pins the engine in `package.json`.
@@ -68,7 +70,7 @@ Arbiter is collaborative and headed toward being an application (likely a web ap
 
 ```sh
 npm install        # install deps (native build only if no prebuilt binary exists)
-npm test           # typecheck + conformance gates 1–7 (17 tests, fixture corpus as oracle)
+npm test           # typecheck + conformance gates 1–7 (29 tests, fixture corpus as oracle)
 npm run build      # compile to dist/ (enables bin/arbiter.js)
 ```
 
