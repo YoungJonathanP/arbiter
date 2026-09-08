@@ -1,8 +1,8 @@
 # Next agent: T07, then handoff
 
 Task: [T07](../improvement-tasks/07-discovery-navigation.md). Ready.
-2026-09-08. arbiter; main;
-HEAD 4a5e0979ec078cf492df3050b6fdc46196727093.
+2026-09-08; main;
+Code cd0e2a51cc726031308f8197f4d4eeea0b88bb35; HEAD adds handoff docs.
 
 ## Start
 
@@ -11,9 +11,9 @@ CLAUDE.md/T07. Define shared bounded search/results: tiers, archives, pages, ord
 previews. Read T07 inputs and core/web handoff modules. Use skill-creator for operating-skill edits.
 No Finance Hub/USB/transcript edits.
 
-Preserve uncommitted T01–T06. Tests 89/89 + final handoff 12/12; build/diff/skill pass.
+T01–T06 committed. Tests 89/89 + final handoff 12/12; build/diff/skill pass.
 Frozen validation 26/0/0 and 23/0/1 existing raw warning; all 50 hashes unchanged.
-[Evidence](completed/t06.md) is optional.
+[Evidence](completed/t06.md).
 
 ## Rechecked gaps
 

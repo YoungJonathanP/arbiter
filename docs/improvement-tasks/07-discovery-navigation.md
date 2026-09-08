@@ -58,8 +58,8 @@ ordering must be shared by CLI and human pages. Archive inclusion is explicit;
 private materials stay excluded before results/counts. Do not invent a new canonical
 source registry in isolation from the deferred T08 task.
 
-Main HEAD remains `4a5e0979ec078cf492df3050b6fdc46196727093`; T01–T06 are
-uncommitted and must be preserved. Bootstrap protocol/base 0.4.12; concrete schemas
+T01–T06 implementation is committed on main at `cd0e2a51cc726031308f8197f4d4eeea0b88bb35`.
+The following commit updates handoff documentation only; verify HEAD/worktree before starting. Bootstrap protocol/base 0.4.12; concrete schemas
 0.4, legacy 0.4.6/8/9/10/11 accepted. Full tests 89/89, final handoff tests 12/12,
 build/skill/diff checks passed. Frozen corpora validated 26/0/0 and 23/0/1 with all
 50 hashes unchanged. Use synthetic/temporary KBs. Live sibling remains absent.

@@ -104,13 +104,17 @@ multiple `gh` accounts configured, switch before a push:
 gh auth switch --user YoungJonathanP
 ```
 
-## Verified T01 state, 2026-09-06
+## Verified T01–T06 state, 2026-09-08
 
-T01 is implemented in the uncommitted worktree based on `4a5e097` on `main`.
-All 36 tests pass, the build passes, and both bundled corpora validate with zero
-errors. The live sibling KB is absent; the shell selects the frozen in-repo
-corpus. Live capture remains unavailable. Continue at the current chaining
-handoff; [T01 completion](docs/handoffs/completed/t01.md) records the evidence.
+T01–T06 implementation is committed at `cd0e2a51cc726031308f8197f4d4eeea0b88bb35` on `main`.
+The following commit updates handoff documentation only. Full tests pass 89/89;
+the final handoff suite passes 12/12, build and corpus validation pass. Continue
+with T07 at the [current chaining handoff](docs/handoffs/next-task.md).
+[T06 completion](docs/handoffs/completed/t06.md) records checks and limitations.
+
+The shell still selects the frozen corpus. The expected live sibling is absent;
+the supplied local comparison snapshot uses unsupported protocol 0.4.7 and remains
+unchanged. Live capture requires an explicitly selected compatible working copy.
 
 ## Historical pre-handoff state (not current live verification)
 

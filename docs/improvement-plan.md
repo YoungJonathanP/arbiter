@@ -1,6 +1,6 @@
 # Arbiter improvement checklist
 
-Status: T01–T06 complete; T07 next and ready, 2026-09-08. This is the execution index for the architecture
+Status: T01–T06 complete and committed (`cd0e2a5`); T07 next and ready, 2026-09-08. This is the execution index for the architecture
 review and the requested task handoffs. The checkboxes below track implementation,
 not agreement with the recommendations. No runtime behavior or protocol changed
 when this plan was written.

@@ -40,8 +40,9 @@ assignment; historical examples are evidence, not instructions to execute.
 
 T06 is complete. [Evidence](../handoffs/completed/t06.md) records files, acceptance
 exercises and limits; [tooling decision/workflow](../v0.4.12-handoff-tooling.md)
-describes the shared request/preview API, CLI and task editor. Main remains at
-`4a5e0979ec078cf492df3050b6fdc46196727093`; all T01–T06 work is uncommitted.
+describes the shared request/preview API, CLI and task editor. T01–T06 implementation
+is committed on main at `cd0e2a51cc726031308f8197f4d4eeea0b88bb35`; the following commit
+updates handoff documentation only.
 
 Verified: full suite 89/89, focused handoff suite 12/12 after the final preview
 before/after field, build, skill validation and diff checks. Source validation:
@@ -63,7 +64,8 @@ installed KBs are untouched. CLI/profiles and both conformance corpora are prese
 The live sibling remains absent and ARBITER_DATA selects the frozen repository
 corpus; no dogfood capture was performed. A user-supplied comparison snapshot
 uses unsupported protocol 0.4.7; it was inspected read-only (see completion evidence). No Finance Hub/USB/transcript edits,
-commit, push, publication or external message occurred.
+push, publication or external message occurred. The user authorized the local
+implementation and handoff commits after initial completion.
 
 The only next assignment is T07; its [current packet](../handoffs/next-task.md)
 starts with the shared bounded query/result contract. Do not begin T07 in this
