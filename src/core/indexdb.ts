@@ -3,14 +3,15 @@
 // Nothing may require it to navigate; it exists to make queries cheap.
 
 import Database from 'better-sqlite3';
-import type { ItemFacts } from './facts.js';
+import { computeNesting, type ItemFacts } from './facts.js';
+import { visibleFacts } from './visibility.js';
 
 export type IndexDb = InstanceType<typeof Database>;
 
 const SCHEMA = `
 CREATE TABLE items (
   ref TEXT PRIMARY KEY, dir TEXT NOT NULL, id TEXT NOT NULL, type TEXT NOT NULL,
-  kind TEXT NOT NULL, title TEXT NOT NULL, status TEXT, updated TEXT, updated_date TEXT,
+  kind TEXT NOT NULL, title TEXT NOT NULL, status TEXT, review TEXT, top_level INTEGER NOT NULL, updated TEXT, updated_date TEXT,
   date TEXT, due TEXT, created TEXT, archived TEXT, visibility TEXT,
   parent TEXT, prev TEXT, staged_count INTEGER NOT NULL, raw INTEGER NOT NULL, rel_path TEXT NOT NULL
 );
@@ -20,12 +21,14 @@ CREATE TABLE docs (item_ref TEXT NOT NULL, doc_id TEXT NOT NULL, kind TEXT NOT N
 `;
 
 export function buildIndex(facts: ItemFacts[], dbPath = ':memory:'): IndexDb {
+  facts = visibleFacts(facts);
+  const nest = computeNesting(facts);
   const db = new Database(dbPath);
   db.pragma('journal_mode = MEMORY');
   for (const t of ['items', 'refs', 'steps', 'docs']) db.exec(`DROP TABLE IF EXISTS ${t};`);
   db.exec(SCHEMA);
   const insertItem = db.prepare(
-    `INSERT INTO items VALUES (@ref,@dir,@id,@type,@kind,@title,@status,@updated,@updated_date,@date,@due,@created,@archived,@visibility,@parent,@prev,@staged_count,@raw,@rel_path)`,
+    `INSERT INTO items VALUES (@ref,@dir,@id,@type,@kind,@title,@status,@review,@top_level,@updated,@updated_date,@date,@due,@created,@archived,@visibility,@parent,@prev,@staged_count,@raw,@rel_path)`,
   );
   const insertRef = db.prepare(`INSERT INTO refs VALUES (?,?,?)`);
   const insertStep = db.prepare(`INSERT INTO steps VALUES (?,?,?,?,?)`);
@@ -40,7 +43,9 @@ export function buildIndex(facts: ItemFacts[], dbPath = ':memory:'): IndexDb {
         kind: f.kind,
         title: f.title,
         status: f.status ?? null,
-        updated: f.updatedRaw ?? null,
+        review: f.review ?? null,
+        top_level: nest.isSub(f.ref) ? 0 : 1,
+        updated: f.updatedRaw?.replace(/^["']|["']$/g, '') ?? null,
         updated_date: f.updatedDate ?? null,
         date: f.date ?? null,
         due: f.due ?? null,

@@ -112,7 +112,8 @@ ${body}
     '2026-07-05-agent-kestrel-7f3a-close-out.md',
   ]);
   // the item is flagged for a human/arbiter session
-  assert.match(result.itemText, /^status: needs-review$/m);
+  assert.match(result.itemText, /^status: blocked$/m);
+  assert.match(result.itemText, /^review: needed$/m);
   // decided ops are all on the record
   assert.match(result.itemText, /arbitrated 2026-07-05-agent-heron-2c91-quickstart-blocked: `mark: \^quickstart = blocked` ⇒ applied/);
   assert.match(result.itemText, /`set: status = done` ⇒ overruled/);
@@ -145,7 +146,10 @@ Seeing 15-minute logouts again on [the dashboard](https://grafana.example.com/d/
   assert.equal(result.outcome, 'partial');
   assert.deepEqual(result.deleted, []);
   assert.deepEqual(result.remaining, [reopen.filename]);
-  assert.match(result.itemText, /^status: needs-review$/m);
+  assert.match(result.itemText, /^status: done$/m);
+  const replay = arbitrate(result.itemText, [reopen]);
+  assert.deepEqual(replay.remaining, [reopen.filename]);
+  assert.match(replay.itemText, /^status: done$/m);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -177,7 +181,7 @@ test('CLI write --if-match: CAS succeeds on match, refuses on mismatch and on st
 
   // mismatched hash refused
   assert.throws(() =>
-    execFileSync(process.execPath, ['--import', 'tsx', cli, 'write', rel, '--if-match', 'deadbeef', '--data', dir], {
+    execFileSync(process.execPath, ['--import', 'tsx', cli, 'write', rel, '--if-match', '0'.repeat(64), '--data', dir], {
       cwd: REPO_ROOT,
       input: next,
     }),

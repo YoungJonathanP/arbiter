@@ -5,14 +5,20 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as process from 'node:process';
-import { arbitrate } from '../core/arbitrate.js';
+import { draftCheckpoint, previewHandoff, captureCheckpoint, exportHandoff, type HandoffRequest, type HandoffPreview } from '../core/handoff.js';
+import { arbitrateFile } from '../core/arbitrate-file.js';
+import { proposalProblems } from '../core/arbitrate.js';
+import { commitFile, CommitConflict, readJournals, recoverCommits, stageProposal } from '../core/commit.js';
+import { randomUUID } from 'node:crypto';
+import { parseItemFile, parseProposal } from '../core/parse.js';
 import { listStaged, sha256, stagedDirFor, walkCorpus } from '../core/corpus.js';
 import { regenFull, regenIncremental } from '../core/dashboard.js';
+import { readProjection } from '../core/projection.js';
 import { extractFacts } from '../core/facts.js';
-import { fmGetRaw } from '../core/fm.js';
+import { fmGet, fmGetRaw } from '../core/fm.js';
 import { buildIndex } from '../core/indexdb.js';
 import { buildDashboardDates, buildIdMap, normalize } from '../core/normalize.js';
-import { parseFrontmatter, parseItemFile, splitLines } from '../core/parse.js';
+import { parseFrontmatter, splitLines } from '../core/parse.js';
 import {
   activeSet,
   chain,
@@ -28,63 +34,12 @@ import { validateCorpus } from '../core/validate.js';
 import { TYPE_TO_DIR } from '../core/model.js';
 import { createArbiterServer } from '../web/server.js';
 
-interface Args {
-  cmd: string;
-  positional: string[];
-  flags: Map<string, string | boolean>;
-}
+import { type Args, parseArgs, help } from './args.js';
+import { assertMutable, checkData, initData, isFrozen, itemPath, selectData } from './data.js';
 
-function parseArgs(argv: string[]): Args {
-  // bare `arbiter` (or flags only) defaults to serve — visual inspection is
-  // the everyday entry point during the dogfood trial
-  if (argv.length === 0 || argv[0]!.startsWith('--')) argv = ['serve', ...argv];
-  const [cmd = 'serve', ...rest] = argv;
-  const positional: string[] = [];
-  const flags = new Map<string, string | boolean>();
-  for (let i = 0; i < rest.length; i++) {
-    const a = rest[i]!;
-    if (a.startsWith('--')) {
-      const key = a.slice(2);
-      const next = rest[i + 1];
-      if (next !== undefined && !next.startsWith('--')) {
-        flags.set(key, next);
-        i++;
-      } else {
-        flags.set(key, true);
-      }
-    } else {
-      positional.push(a);
-    }
-  }
-  return { cmd, positional, flags };
-}
-
-/**
- * Data-directory resolution, so `arbiter` works from any directory:
- *   1. --data flag
- *   2. ARBITER_DATA environment variable
- *   3. walk up from cwd looking for arbiter-data/PROTOCOL.md
- *      (or being inside the data directory itself)
- */
-function dataDir(args: Args): string {
-  const flag = args.flags.get('data');
-  if (typeof flag === 'string') return path.resolve(flag);
-  const env = process.env['ARBITER_DATA'];
-  if (env !== undefined && env !== '') return path.resolve(env);
-  let cur = process.cwd();
-  for (;;) {
-    const candidate = path.join(cur, 'arbiter-data');
-    if (fs.existsSync(path.join(candidate, 'PROTOCOL.md'))) return candidate;
-    if (path.basename(cur) === 'arbiter-data' && fs.existsSync(path.join(cur, 'PROTOCOL.md'))) return cur;
-    const parent = path.dirname(cur);
-    if (parent === cur) break;
-    cur = parent;
-  }
-  console.error(
-    'no arbiter-data directory found — pass --data <dir>, set ARBITER_DATA, or run inside a tree containing arbiter-data/PROTOCOL.md',
-  );
-  process.exit(2);
-}
+// Resolve and check once per invocation, including triage's follow-up regen.
+let selectedDir: string;
+function dataDir(_args: Args): string { return selectedDir; }
 
 function nowStamp(args: Args): string {
   const flag = args.flags.get('now');
@@ -101,13 +56,11 @@ function protocolRaw(dir: string): string {
     const raw = fm ? fmGetRaw(fm.fm, 'version') : undefined;
     if (raw) return raw;
   }
-  return '"0.4.7"';
+  throw new Error('PROTOCOL.md has no version');
 }
 
 function resolveItemPath(dir: string, arg: string): { abs: string; rel: string } {
-  let rel = arg.endsWith('.md') ? arg : `${arg}.md`;
-  if (path.isAbsolute(rel)) rel = path.relative(dir, rel).split(path.sep).join('/');
-  const abs = path.join(dir, ...rel.split('/'));
+  const { abs, rel } = itemPath(dir, arg);
   if (!fs.existsSync(abs)) {
     console.error(`no such item: ${rel}`);
     process.exit(2);
@@ -129,13 +82,40 @@ function slugify(s: string): string {
 
 // --- commands -----------------------------------------------------------------
 
+function cmdHandoff(args: Args): void {
+  const dir = dataDir(args), ref = itemPath(dir, args.positional[0]!).rel.replace(/\.md$/, '');
+  const readJson = (key: string) => JSON.parse(fs.readFileSync(String(args.flags.get(key)), 'utf8'));
+  if (args.flags.has('capture') || args.flags.has('export')) {
+    const capture = args.flags.has('capture');
+    const preview = readJson(capture ? 'capture' : 'export') as HandoffPreview;
+    if (preview.request.ref !== ref) throw new Error('Preview belongs to a different task');
+    if (capture) {
+      assertMutable(dir);
+      console.log(JSON.stringify(captureCheckpoint(dir, preview), null, 2));
+    } else process.stdout.write(exportHandoff(dir, preview));
+    return;
+  }
+  if (args.cmd === 'checkpoint' && !args.flags.has('file')) {
+    process.stdout.write(draftCheckpoint(dir, ref)); return;
+  }
+  const request: HandoffRequest = args.flags.has('file') ? readJson('file') : { ref };
+  if (request.ref !== ref) throw new Error('Request belongs to a different task');
+  if (args.cmd === 'checkpoint' && !request.checkpoint) throw new Error('Checkpoint preview requires draft Markdown in request.checkpoint');
+  if (args.cmd === 'handoff' && request.checkpoint) throw new Error('Use checkpoint for draft previews');
+  if (args.flags.has('format')) request.format = String(args.flags.get('format')) as 'markdown' | 'json';
+  console.log(JSON.stringify(previewHandoff(dir, request), null, 2));
+}
+
 function cmdValidate(args: Args): void {
   const dir = dataDir(args);
   const files = walkCorpus(dir);
   const schemas = SchemaSet.load(dir);
   const report = validateCorpus(dir, files, schemas);
-  for (const w of report.warnings) console.log(`warning ${w.relPath}: ${w.message}`);
-  for (const e of report.errors) console.log(`ERROR   ${e.relPath}: ${e.message}`);
+  for (const journal of readJournals(dir)) {
+    if (journal.state !== 'complete') report.warnings.push({ severity: 'warning', relPath: `.arbiter/transactions/${journal.id}.json`, message: `${journal.state}: ${journal.target}; inspect with recover --dry-run${journal.reason ? `; ${journal.reason}` : ''}` });
+  }
+  for (const w of report.warnings) console.log(`warning ${w.relPath}${w.line ? `:${w.line}` : ''}: ${w.message}`);
+  for (const e of report.errors) console.log(`ERROR   ${e.relPath}${e.line ? `:${e.line}` : ''}: ${e.message}`);
   console.log(
     `${files.length} files, ${report.errors.length} error(s), ${report.warnings.length} warning(s)`,
   );
@@ -144,19 +124,17 @@ function cmdValidate(args: Args): void {
 
 function cmdRegen(args: Args): void {
   const dir = dataDir(args);
-  const files = walkCorpus(dir);
-  const schemas = SchemaSet.load(dir);
-  const facts = extractFacts(dir, files, schemas);
+  const { facts, inputs } = readProjection(dir);
   const dashPath = path.join(dir, 'DASHBOARD.md');
   const prev = fs.existsSync(dashPath) ? fs.readFileSync(dashPath, 'utf8') : null;
-  const opts = { now: nowStamp(args), protocolRaw: protocolRaw(dir), generator: 'arbiter-cli' };
+  const opts = { now: nowStamp(args), protocolRaw: protocolRaw(dir), generator: 'arbiter-cli', inputs };
   const out =
     prev !== null && !args.flags.get('full') ? regenIncremental(facts, prev, opts) : regenFull(facts, prev, opts);
   if (args.flags.get('dry-run')) {
     process.stdout.write(out);
     return;
   }
-  fs.writeFileSync(dashPath, out, 'utf8');
+  commitFile(dir, 'DASHBOARD.md', () => ({ text: out }), { expected: prev === null ? 'new' : sha256(prev) });
   console.log(`regenerated ${path.relative(process.cwd(), dashPath)} (${prev === null ? 'full rebuild' : 'incremental'})`);
 }
 
@@ -178,9 +156,7 @@ function cmdTriage(args: Args): void {
 
 function cmdQuery(args: Args): void {
   const dir = dataDir(args);
-  const files = walkCorpus(dir);
-  const schemas = SchemaSet.load(dir);
-  const facts = extractFacts(dir, files, schemas);
+  const { facts, inputs } = readProjection(dir);
   const db = buildIndex(facts);
   const today = nowStamp(args).slice(0, 10);
   const sub = args.positional[0] ?? 'staged';
@@ -193,7 +169,7 @@ function cmdQuery(args: Args): void {
       case 'staged':
         return stagedItems(db);
       case 'active':
-        return activeSet(db, args.positional[1] ?? 'tasks');
+        return activeSet(db, args.positional[1] ?? 'tasks', today);
       case 'children':
         return children(db, args.positional[1] ?? '');
       case 'page':
@@ -216,7 +192,7 @@ function cmdQuery(args: Args): void {
   for (const r of rows) {
     const status = r.status ? `[${r.status}] ` : '';
     const staged = r.staged_count > 0 ? `(${r.staged_count} staged) ` : '';
-    console.log(`${status}${staged}${r.title} — ${r.date ?? r.updated_date ?? '?'} -> ${r.rel_path}`);
+    console.log(`${status}${staged}${r.review ? `(review: ${r.review}) ` : ''}${r.title} — ${r.date ?? r.updated_date ?? '?'} -> ${r.rel_path}`);
   }
 }
 
@@ -236,12 +212,15 @@ function cmdNew(args: Args): void {
   }
   const now = nowStamp(args);
   const today = now.slice(0, 10);
+  const eventDate = String(args.flags.get('date') ?? today);
+  if (!title.trim() || /[\r\n]/.test(title)) throw new Error('title must be nonempty and on one line');
   const base = slugify(title);
+  if (!base) throw new Error('title must contain letters or digits for a valid slug');
   const slugForm = schema.slugForm ?? '<base>';
   const id = slugForm.includes('YYYYqN')
-    ? `${base}-${quarterOf(today)}`
+    ? `${base}-${quarterOf(eventDate)}`
     : slugForm.includes('YYYY-MM-DD')
-      ? `${base}-${today}`
+      ? `${base}-${eventDate}`
       : base;
   const itemDir = TYPE_TO_DIR[type]!;
   const rel = `${itemDir}/${id}.md`;
@@ -255,7 +234,7 @@ function cmdNew(args: Args): void {
       const m = /^(.*)-(\d{4})q([1-4])\.md$/.exec(f);
       if (!m || m[1] !== base) return false;
       const [y, q] = [Number(m[2]), Number(m[3])];
-      const [cy, cq] = [Number(today.slice(0, 4)), Math.floor((Number(today.slice(5, 7)) - 1) / 3) + 1];
+      const [cy, cq] = [Number(eventDate.slice(0, 4)), Math.floor((Number(eventDate.slice(5, 7)) - 1) / 3) + 1];
       return Math.abs((cy - y) * 4 + (cq - q)) <= 2;
     });
     if (rivals.length > 0) {
@@ -272,7 +251,7 @@ function cmdNew(args: Args): void {
 
   const fmLines = ['---', `id: ${id}`, `type: ${type}`, `title: ${title}`];
   if (schema.kind === 'work-item') fmLines.push('status: todo');
-  if (schema.fields.get('date')?.required) fmLines.push(`date: ${today}`);
+  if (schema.fields.get('date')?.required) fmLines.push(`date: ${eventDate}`);
   if (type === 'accomplishment') fmLines.push('source: []');
   fmLines.push(`created: ${today}`, `updated: ${now}`, '---');
   const sections: string[] = [];
@@ -293,7 +272,7 @@ function cmdNew(args: Args): void {
     '',
   ].join('\n');
   fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, body, 'utf8');
+  commitFile(dir, rel, () => ({ text: body }), { expected: 'new' });
   console.log(rel);
 }
 
@@ -305,18 +284,9 @@ function cmdArbitrate(args: Args): void {
     process.exit(2);
   }
   const { abs, rel } = resolveItemPath(dir, target);
-  const stagedNames = listStaged(dir, rel);
-  if (stagedNames.length === 0) {
-    console.log(`${rel}: nothing staged`);
-    return;
-  }
-  const stagedAbs = path.join(dir, ...stagedDirFor(rel).split('/'));
-  const before = fs.readFileSync(abs, 'utf8');
-  const proposals = stagedNames.map((name) => ({
-    filename: name,
-    text: fs.readFileSync(path.join(stagedAbs, name), 'utf8'),
-  }));
-  const result = arbitrate(before, proposals);
+  const diagnostics = validateCorpus(dir, walkCorpus(dir), SchemaSet.load(dir));
+  for (const d of [...diagnostics.errors, ...diagnostics.warnings]) console.error(`${d.severity}: ${d.relPath}${d.line ? `:${d.line}` : ''}: ${d.message}`);
+  const result = arbitrateFile(dir, rel, { dryRun: Boolean(args.flags.get('dry-run')) });
   for (const f of result.flags) console.log(`note: ${f}`);
   if (args.flags.get('dry-run')) {
     process.stdout.write(result.itemText);
@@ -324,22 +294,29 @@ function cmdArbitrate(args: Args): void {
     console.log(`would keep staged: ${result.remaining.join(', ') || '(none)'}`);
     return;
   }
-  // write, then verify: a write you have not observed in the file is not done
-  fs.writeFileSync(abs, result.itemText, 'utf8');
-  const observed = fs.readFileSync(abs, 'utf8');
-  if (observed !== result.itemText) {
-    console.error(`${rel}: post-write verification failed — a concurrent writer landed; re-run arbitrate`);
-    process.exit(3);
-  }
-  for (const name of result.deleted) fs.unlinkSync(path.join(stagedAbs, name));
-  // an emptied .staged/ directory is removed (leaving it is also conforming)
-  if (result.remaining.length === 0 && fs.existsSync(stagedAbs) && fs.readdirSync(stagedAbs).length === 0) {
-    fs.rmdirSync(stagedAbs);
-  }
   console.log(
     `${rel}: arbitrated ${result.deleted.length} proposal(s)` +
-      (result.remaining.length > 0 ? `; ${result.remaining.length} escalated (needs-review)` : ''),
+      (result.remaining.length > 0 ? `; ${result.remaining.length} remain staged for review` : ''),
   );
+}
+
+function cmdPropose(args: Args): void {
+  const dir = dataDir(args);
+  const { abs, rel } = resolveItemPath(dir, args.positional[0]!);
+  const before = fs.readFileSync(abs, 'utf8');
+  const updated = nowStamp(args);
+  const author = String(args.flags.get('author') ?? 'agent');
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(author)) throw new Error('--author must be a lowercase slug');
+  const id = `${updated.slice(0, 10)}-${author}-${randomUUID()}`;
+  const op = String(args.flags.get('op'));
+  const intent = String(args.flags.get('intent'));
+  const quote = (s: string) => `'${s.replaceAll("'", "''")}'`;
+  const text = `---\nid: ${id}\nitem: ${rel.replace(/\.md$/, '')}\nbase: sha256:${sha256(before)}\nauthor: ${author}\nupdated: ${updated}\nops: [${quote(op)}]\n---\n\n# Proposed change\n\n${intent}\n\n<!-- arbiter:staged · PROTOCOL.md#arbitration · pending proposal -->\n`;
+  const p = { filename: `${id}.md`, text };
+  const problems = proposalProblems(parseProposal(text), p.filename, parseItemFile(before));
+  if (problems.length) throw new Error(problems.join('; '));
+  stageProposal(dir, rel, p);
+  console.log(`${stagedDirFor(rel)}/${p.filename}`);
 }
 
 function cmdWrite(args: Args): void {
@@ -350,24 +327,11 @@ function cmdWrite(args: Args): void {
     console.error('usage: arbiter write <path> --if-match <sha256|new> [--file <src>]  (content from --file or stdin)');
     process.exit(2);
   }
-  const rel = target.endsWith('.md') ? target : `${target}.md`;
-  const abs = path.join(dir, ...rel.split('/'));
+  const { abs, rel } = itemPath(dir, target);
   const src = args.flags.get('file');
   const content = typeof src === 'string' ? fs.readFileSync(src, 'utf8') : fs.readFileSync(0, 'utf8');
 
-  const exists = fs.existsSync(abs);
-  const current = exists ? sha256(fs.readFileSync(abs, 'utf8')) : 'new';
-  if (current !== ifMatch) {
-    console.error(`CAS mismatch: current is ${current} — re-read, rebase or stage a proposal (PROTOCOL.md#arbitration)`);
-    process.exit(3);
-  }
-  // staging is sticky: while any proposal pends, every writer stages
-  if (listStaged(dir, rel).length > 0) {
-    console.error(`refused: ${stagedDirFor(rel)}/ has pending proposals — stage your change and arbitrate`);
-    process.exit(3);
-  }
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
-  fs.writeFileSync(abs, content, 'utf8');
+  commitFile(dir, rel, () => ({ text: content, verify: observed => observed === content }), { expected: ifMatch });
   console.log(sha256(content));
 }
 
@@ -421,65 +385,85 @@ function cmdNormalize(args: Args): void {
     for (const flag of res.flags) console.log(`note: ${flag}`);
     if (res.changed) {
       changed++;
-      if (!args.flags.get('dry-run')) fs.writeFileSync(f.absPath, res.text, 'utf8');
+      if (!args.flags.get('dry-run')) commitFile(dir, f.relPath, () => ({ text: res.text, verify: observed => normalize(f.relPath, observed, { ...ctx, mtime: f.mtime }).text === res.text }), { expected: sha256(f.text) });
       console.log(`normalized ${f.relPath}`);
     }
   }
   console.log(changed === 0 ? 'already canonical' : `${changed} file(s) normalized`);
 }
 
-function help(): void {
-  console.log(`arbiter — headless core for the Arbiter knowledge base (protocol 0.4.7)
-
-usage: arbiter <command> [args] [--data <dir>] [--now <YYYY-MM-DDTHH:MM>]
-
-data dir: --data > $ARBITER_DATA > nearest arbiter-data/ walking up from cwd
-
-  validate                       judge the data directory against grammar + type schemas
-  regen [--full] [--dry-run]     regenerate DASHBOARD.md (incremental by default)
-  triage [--dry-run]             needs-review stamps, archive flags, 24h staged sweep
-  query <sub> [--json]           overdue | needs-review | staged | active <dir> | children <ref> | page <dir> [n] | chain <ref>
-  new <type> <title...>          create an item (slug form + reopen rule enforced)
-  arbitrate <dir>/<id> [--dry-run]  apply/resolve staged proposals (pure, confluent)
-  write <path> --if-match <sha256|new>  CAS write; content from stdin or --file
-  normalize [--dry-run]          liberal → canonical repair pass (idempotent)
-  serve [--port 4870]            read-only local renderer for visual inspection (binds 127.0.0.1)
-                                 (default: bare \`arbiter\` runs serve)
-  hash <path>                    sha256 of a file, for --if-match`);
+function main(): void {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.cmd === 'help') { help(); return; }
+  selectedDir = selectData(args);
+  const mutates = ['init', 'new', 'write', 'propose', 'recover', 'regen', 'triage', 'arbitrate', 'normalize'].includes(args.cmd) && !args.flags.has('dry-run');
+  if (mutates) assertMutable(selectedDir);
+  else if (isFrozen(selectedDir)) console.error('note: frozen conformance corpus (read-only)');
+  if (args.cmd === 'init') {
+    initData(selectedDir);
+    cmdRegen(args);
+    cmdValidate(args);
+    console.log('initialized KB: protocol 0.4.12; schemas _base 0.4.12, concrete types 0.4');
+    return;
+  }
+  const state = checkData(selectedDir);
+  if (state === 'empty') {
+    const message = 'empty bootstrap directory (not initialized); run init --data <dir> before use';
+    if (['validate', 'doctor'].includes(args.cmd)) { console.log(message); return; }
+    throw new Error(message);
+  }
+  if (args.cmd === 'doctor') {
+    console.log(`KB identity: protocol ${fmGet(parseFrontmatter(splitLines(fs.readFileSync(path.join(selectedDir, 'PROTOCOL.md'), 'utf8')))!.fm, 'version')}; concrete types 0.4`);
+    cmdValidate(args);
+    return;
+  }
+  switch (args.cmd) {
+    case 'checkpoint':
+    case 'handoff':
+      cmdHandoff(args);
+      break;
+    case 'validate':
+      cmdValidate(args);
+      break;
+    case 'regen':
+      cmdRegen(args);
+      break;
+    case 'triage':
+      cmdTriage(args);
+      break;
+    case 'query':
+      cmdQuery(args);
+      break;
+    case 'new':
+      cmdNew(args);
+      break;
+    case 'arbitrate':
+      cmdArbitrate(args);
+      break;
+    case 'propose':
+      cmdPropose(args);
+      break;
+    case 'recover':
+      console.log(JSON.stringify(args.flags.has('dry-run') ? readJournals(selectedDir) : recoverCommits(selectedDir), null, 2));
+      break;
+    case 'write':
+      cmdWrite(args);
+      break;
+    case 'normalize':
+      cmdNormalize(args);
+      break;
+    case 'serve':
+      cmdServe(args);
+      break;
+    case 'hash':
+      cmdHash(args);
+      break;
+    default:
+      help();
+  }
 }
 
-const args = parseArgs(process.argv.slice(2));
-switch (args.cmd) {
-  case 'validate':
-    cmdValidate(args);
-    break;
-  case 'regen':
-    cmdRegen(args);
-    break;
-  case 'triage':
-    cmdTriage(args);
-    break;
-  case 'query':
-    cmdQuery(args);
-    break;
-  case 'new':
-    cmdNew(args);
-    break;
-  case 'arbitrate':
-    cmdArbitrate(args);
-    break;
-  case 'write':
-    cmdWrite(args);
-    break;
-  case 'normalize':
-    cmdNormalize(args);
-    break;
-  case 'serve':
-    cmdServe(args);
-    break;
-  case 'hash':
-    cmdHash(args);
-    break;
-  default:
-    help();
+try { main(); } catch (error) {
+  console.error(`error: ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(error instanceof CommitConflict ? 3 : 2);
 }

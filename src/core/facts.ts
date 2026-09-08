@@ -3,7 +3,6 @@
 // staged-directory listing — no wall clock, no mtimes (dated evidence only).
 
 import type { CorpusFile } from './corpus.js';
-import { listStaged } from './corpus.js';
 import { fmGet, fmGetRaw, fmGetList } from './fm.js';
 import { DIR_TO_TYPE, TERMINAL_STATUSES } from './model.js';
 import { parseItemFile } from './parse.js';
@@ -18,7 +17,8 @@ export interface ItemFacts {
   kind: 'work-item' | 'record';
   title: string;
   status?: string;
-  /** raw `updated:` value as written (emitted verbatim); ISO order = lexicographic */
+  review?: string;
+  /** raw `updated:` scalar; unquote before timestamp comparisons */
   updatedRaw?: string;
   updatedDate?: string; // date part
   date?: string; // record date field
@@ -35,7 +35,7 @@ export interface ItemFacts {
   summaryFirst?: string;
   anchors: string[];
   steps: { mark: string; text: string; anchor?: string }[];
-  docs: { docId: string; title: string; docKind: string; relPath: string }[];
+  docs: { docId: string; title: string; docKind: string; relPath: string; visibility?: string }[];
   hash?: string;
 }
 
@@ -43,7 +43,7 @@ export function isTerminal(status: string | undefined): boolean {
   return status !== undefined && TERMINAL_STATUSES.has(status);
 }
 
-export function extractFacts(dataDir: string, files: CorpusFile[], schemas: SchemaSet): ItemFacts[] {
+export function extractFacts(_dataDir: string, files: CorpusFile[], schemas: SchemaSet): ItemFacts[] {
   const out: ItemFacts[] = [];
   for (const f of files) {
     if (f.kind !== 'item') continue;
@@ -61,6 +61,7 @@ export function extractFacts(dataDir: string, files: CorpusFile[], schemas: Sche
       type,
       kind: schema?.kind ?? 'record',
       title: fmGet(ast.fm, 'title') ?? ast.title ?? id,
+      review: fmGet(ast.fm, 'review') ?? (fmGet(ast.fm, 'status') === 'needs-review' ? 'legacy-unknown' : undefined),
       status: fmGet(ast.fm, 'status') ?? (schema?.kind === 'work-item' ? 'todo' : undefined),
       updatedRaw: fmGetRaw(ast.fm, 'updated') ?? updated,
       updatedDate: updated?.slice(0, 10),
@@ -72,7 +73,7 @@ export function extractFacts(dataDir: string, files: CorpusFile[], schemas: Sche
       parent: fmGet(ast.fm, 'parent'),
       prev: fmGet(ast.fm, 'prev'),
       related: fmGetList(ast.fm, 'related') ?? [],
-      stagedCount: listStaged(dataDir, f.relPath).length,
+      stagedCount: files.filter(p => p.kind === 'proposal' && p.relPath.startsWith(f.relPath.replace(/\.md$/, '.staged/'))).length,
       raw: ast.fm === null,
       anchors: [],
       steps: [],
@@ -88,7 +89,9 @@ export function extractFacts(dataDir: string, files: CorpusFile[], schemas: Sche
           if (st.anchor) facts.anchors.push(st.anchor);
         }
       }
-      if (s.kind === 'docs') facts.docs.push(...s.entries);
+      if (s.kind === 'docs') facts.docs.push(...s.entries.map(entry => ({
+        ...entry, visibility: fmGet(parseItemFile(files.find(file => file.relPath === entry.relPath)?.text ?? '').fm, 'visibility'),
+      })));
     }
     out.push(facts);
   }
@@ -101,7 +104,7 @@ export function daysBetween(a: string, b: string): number {
 }
 
 // Nesting (PROTOCOL.md#tier-1/#tier-2, grammar §7 membership): a work item
-// whose `parent` resolves to an existing, non-archived item in the SAME
+// whose `parent` resolves to a visible, nonterminal, non-archived item in the SAME
 // directory is a sub-item — off tier 1, reached through its parent. The child
 // list is derived from the children's parent refs (forward pointers are
 // computed, never stored), and staged counts roll up onto the nearest
@@ -128,15 +131,24 @@ export function computeNesting(facts: ItemFacts[]): Nesting {
       list.push(f);
       children.set(p.ref, list);
     }
-    if (p !== undefined && p.dir === f.dir && !p.archived) subs.add(f.ref);
+    if (f.kind === 'work-item' && p !== undefined && p.kind === 'work-item' && p.dir === f.dir && !p.archived && !isTerminal(p.status)) subs.add(f.ref);
+  }
+  for (const f of facts) {
+    const seen = new Set<string>();
+    let cur: ItemFacts | undefined = f;
+    while (cur && subs.has(cur.ref)) {
+      if (seen.has(cur.ref)) { for (const ref of seen) subs.delete(ref); break; }
+      seen.add(cur.ref);
+      cur = cur.parent ? byRef.get(cur.parent) : undefined;
+    }
   }
   for (const list of children.values()) {
     list.sort((a, b) => {
       const at = isTerminal(a.status) ? 1 : 0;
       const bt = isTerminal(b.status) ? 1 : 0;
       if (at !== bt) return at - bt;
-      const au = a.updatedRaw ?? '';
-      const bu = b.updatedRaw ?? '';
+      const au = a.updatedRaw?.replace(/^["']|["']$/g, '') ?? '';
+      const bu = b.updatedRaw?.replace(/^["']|["']$/g, '') ?? '';
       if (au !== bu) return au < bu ? 1 : -1;
       return a.ref < b.ref ? -1 : 1;
     });

@@ -2,6 +2,7 @@
 // Idempotent (gate 1); never discards human prose; opaque regions pass through
 // untouched (gate 4). Pure: all environmental facts arrive via NormalizeContext.
 
+import { sectionDiagnostics } from './section-rows.js';
 import type { Frontmatter, ItemFile, Section } from './model.js';
 import { DIR_TO_TYPE, KNOWN_SECTIONS } from './model.js';
 import { fmGet, fmGetRaw, fmSet, fmSetRaw } from './fm.js';
@@ -77,7 +78,7 @@ function qualifyRef(v: string, ctx: NormalizeContext, flags: string[], relPath: 
   return v;
 }
 
-/** Canonical section order: Summary, Checklist, Artifacts/Evidence, Detail docs, opaque in original order. */
+/** Canonical section order: Summary, Plan inputs, Checklist, Artifacts/Evidence, Detail docs, opaque in original order. */
 function orderSections(sections: Section[]): Section[] {
   const rank = (s: Section): number => {
     const i = (KNOWN_SECTIONS as readonly string[]).indexOf(s.heading);
@@ -187,6 +188,7 @@ function normalizeItem(relPath: string, text: string, ctx: NormalizeContext): No
   if (!ast.pointer) ast.pointer = defaultPointer('tier-2');
 
   for (const s of ast.sections) {
+    for (const d of sectionDiagnostics(s)) flags.push(`${relPath}:${d.line}: malformed entry in ## ${s.heading}; expected ${d.expected}; preserved verbatim`);
     if (s.kind === 'malformed') flags.push(`${relPath}: section "## ${s.heading}" is off-grammar; preserved verbatim`);
   }
   if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) flags.push(`${relPath}: un-slugged filename; rename only if never referenced`);
@@ -199,6 +201,11 @@ export function normalize(relPath: string, text: string, ctx: NormalizeContext):
   const kind = classifyPath(relPath);
   const lf = text.replace(/\r\n/g, '\n');
   switch (kind) {
+    case 'checkpoint':
+    case 'checkpoint-history':
+      // Checkpoint revisions name exact bytes. Never silently normalize a
+      // version or its history; explicit replacement creates a new revision.
+      return { text, changed: false, flags: [] };
     case 'protocol':
       return { text: lf.endsWith('\n') ? lf : lf + '\n', changed: text !== lf || !lf.endsWith('\n'), flags: [] };
     case 'item':

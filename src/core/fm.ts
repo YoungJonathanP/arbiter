@@ -1,5 +1,5 @@
 // Restricted-YAML frontmatter per grammar §4: a flat mapping of scalars and
-// flat sequences, plus (in type-schema files only, §10) one level of nested
+// flat sequences, plus (in type schemas and checkpoint metadata, §15) one level of nested
 // block mapping whose values are inline flow mappings. Hand-rolled so that the
 // concrete syntax of untouched entries survives byte-for-byte.
 

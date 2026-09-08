@@ -22,12 +22,15 @@ export interface Frontmatter {
 export type Mark = ' ' | '~' | '!' | 'x';
 
 export interface Continuation {
+  rawLine?: number;
+  rawLeadingBlanks?: string[];
   kw: 'blocked-by' | 'see';
   label: string;
   target: string;
 }
 
 export interface Step {
+  rawLine?: number;
   mark: Mark;
   text: string;
   anchor?: string;
@@ -35,23 +38,37 @@ export interface Step {
 }
 
 export interface LinkEntry {
+  rawLine?: number;
   kindLabel: string;
   label: string;
   target: string;
 }
 
 export interface DocsEntry {
+  rawLine?: number;
   docId: string;
   title: string;
   docKind: string;
   relPath: string;
 }
 
+/** Entry indices address the structured arrays; opaque and blank rows retain order.
+ * Consumers may mutate entries in place or append. Reindex rows when removing or
+ * reordering entries. Source positions are 1-based in the parsed input snapshot. */
+export type SectionRow =
+  | { kind: 'entry'; index: number; line: number }
+  | { kind: 'opaque'; raw: string; line: number; expected: string }
+  | { kind: 'blank'; raw: string; line: number };
+
+export interface RecoverableSection {
+  rawRows?: SectionRow[];
+}
+
 export type Section =
   | { kind: 'prose'; heading: string; lines: string[] } // Summary + opaque; lines exclude trailing blanks
-  | { kind: 'checklist'; heading: string; steps: Step[] }
-  | { kind: 'links'; heading: string; entries: LinkEntry[] }
-  | { kind: 'docs'; heading: string; entries: DocsEntry[] }
+  | { kind: 'checklist'; heading: string; steps: Step[] } & RecoverableSection
+  | { kind: 'links'; heading: string; entries: LinkEntry[] } & RecoverableSection
+  | { kind: 'docs'; heading: string; entries: DocsEntry[] } & RecoverableSection
   | { kind: 'malformed'; heading: string; lines: string[] }; // known heading, body off-grammar: opaque + flagged
 
 export interface PointerLine {
@@ -72,6 +89,7 @@ export interface ItemFile {
 export interface DashboardEntry {
   status?: string;
   stagedCount?: number;
+  review?: string;
   title: string;
   date: string;
   relPath: string;
@@ -140,7 +158,25 @@ export interface TypeSchema {
   relevance?: 'active-first' | 'recent-first';
 }
 
-export type FileKind = 'item' | 'dashboard' | 'doc' | 'proposal' | 'schema' | 'protocol';
+// Checkpoints share the lossless document syntax, with metadata defined in §15.
+export type CheckpointFile = DocFile;
+export type CheckpointReadiness = 'unprepared' | 'ready' | 'waiting' | 'review-required';
+export interface CheckpointInput {
+  id: string;
+  source: string; // kb:<root-relative path>, repo:<relative path>, or https URL
+  revision: string; // sha256:<hex>, external immutable revision, or unknown
+  observed: string;
+  purpose: string;
+}
+export interface StartPredicate {
+  id: string;
+  state: 'met' | 'unmet' | 'unknown';
+  owner: string;
+  condition: string;
+  evidence: string;
+}
+
+export type FileKind = 'item' | 'dashboard' | 'doc' | 'checkpoint' | 'checkpoint-history' | 'proposal' | 'schema' | 'protocol';
 
 export const ITEM_DIRS = ['tasks', 'goals', 'meetings', 'journal', 'accomplishments'] as const;
 export type ItemDir = (typeof ITEM_DIRS)[number];
@@ -161,6 +197,6 @@ export const TERMINAL_STATUSES = new Set(['done', 'dropped']);
 export const STATUSES = new Set(['todo', 'in-flight', 'blocked', 'done', 'dropped', 'needs-review']);
 export const MARKS: Mark[] = [' ', '~', '!', 'x'];
 export const DOC_KINDS = new Set(['plan', 'investigation', 'report', 'note']);
-export const POINTER_SCOPES = new Set(['tier-1', 'tier-2', 'tier-3', 'types', 'staged']);
+export const POINTER_SCOPES = new Set(['tier-1', 'tier-2', 'tier-3', 'types', 'staged', 'checkpoint']);
 
-export const KNOWN_SECTIONS = ['Summary', 'Checklist', 'Artifacts', 'Evidence', 'Detail docs'] as const;
+export const KNOWN_SECTIONS = ['Summary', 'Plan inputs', 'Checklist', 'Artifacts', 'Evidence', 'Detail docs'] as const;

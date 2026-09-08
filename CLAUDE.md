@@ -2,9 +2,9 @@
 
 Agentic knowledge base: three tiers of markdown under `arbiter-data/` are
 canonical truth; agents with file tools are the primary client; the CLI and
-the read-only renderer sit on top. Normative specs: `docs/grammar.md`
-(machine-read subset, conformance gates) and `arbiter-data/PROTOCOL.md`
-(agent contract). Decision records live in `docs/`.
+the local renderer with checkpoint capture sit on top. Normative specs: `docs/grammar.md`
+(machine-read subset, conformance gates) and `assets/contract/PROTOCOL.md`
+(canonical bootstrap agent contract; an installed live KB uses its own PROTOCOL.md). Decision records live in `docs/`.
 
 ## Dogfooding — applies to every session in this repo
 

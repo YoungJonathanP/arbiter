@@ -1,5 +1,5 @@
 // Triage — PROTOCOL.md#statuses, #archive, #arbitration (sweep):
-//   1. stamp `needs-review` on non-terminal work items untouched 14+ days
+//   1. stamp `review: needed` on non-terminal work items untouched 14+ days
 //   2. stamp `archived:` on terminal work items past their dashboard age-off,
 //      and on records older than a quarter (accomplishments are archived too,
 //      but never deleted — reports still read them)
@@ -8,7 +8,9 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { arbitrate } from './arbitrate.js';
+import { arbitrateFile } from './arbitrate-file.js';
+import { commitFile } from './commit.js';
+import { sha256 } from './corpus.js';
 import type { CorpusFile } from './corpus.js';
 import { listStaged, stagedDirFor } from './corpus.js';
 import { extractFacts, daysBetween } from './facts.js';
@@ -43,10 +45,14 @@ export function triage(dataDir: string, files: CorpusFile[], schemas: SchemaSet,
 
   const facts = extractFacts(dataDir, files, schemas);
   const write = (absPath: string, text: string) => {
-    if (!opts.dryRun) fs.writeFileSync(absPath, text, 'utf8');
+    if (!opts.dryRun) {
+      const file = files.find(f => f.absPath === absPath)!;
+      commitFile(dataDir, file.relPath, () => ({ text, verify: observed => serializeItem(parseItemFile(observed)) === serializeItem(parseItemFile(text)) }), { expected: sha256(file.text) });
+    }
   };
 
   for (const f of facts) {
+    if (f.visibility === 'private') continue;
     const file = files.find((x) => x.relPath === f.relPath)!;
 
     // 3. staged sweep first: arbitration may change status honestly
@@ -60,24 +66,21 @@ export function triage(dataDir: string, files: CorpusFile[], schemas: SchemaSet,
       const oldest = Math.min(
         ...proposals.map((p) => {
           const upd = fmGet(parseProposal(p.text).fm, 'updated');
-          return upd ? Date.parse(upd) : 0;
+          const parsed = upd ? Date.parse(upd) : NaN;
+          return Number.isFinite(parsed) ? parsed : 0;
         }),
       );
       if (Date.parse(opts.now) - oldest >= sweepMs) {
-        const result = arbitrate(file.text, proposals);
+        const result = arbitrateFile(dataDir, f.relPath, { dryRun: opts.dryRun });
+        for (const flag of result.flags) actions.push({ relPath: f.relPath, action: flag });
         if (result.outcome !== 'noop') {
-          write(file.absPath, result.itemText);
-          if (!opts.dryRun) {
-            for (const name of result.deleted) fs.unlinkSync(path.join(stagedDirAbs, name));
-            if (result.remaining.length === 0 && fs.existsSync(stagedDirAbs)) fs.rmdirSync(stagedDirAbs);
-          }
           file.text = result.itemText;
           actions.push({
             relPath: f.relPath,
             action:
               result.outcome === 'clean'
                 ? `swept ${result.deleted.length} staged proposal(s); arbitrated`
-                : `swept staging: ${result.deleted.length} arbitrated, ${result.remaining.length} escalated to needs-review`,
+                : `swept staging: ${result.deleted.length} arbitrated, ${result.remaining.length} remain staged for review`,
           });
         }
         continue; // arbitration already recomputed status/updated
@@ -86,22 +89,22 @@ export function triage(dataDir: string, files: CorpusFile[], schemas: SchemaSet,
 
     if (f.raw) continue; // raw human files are normalized, not triaged
 
-    // 1. needs-review: non-terminal work item untouched 14+ days
+    // 1. review metadata: non-terminal work item untouched 14+ days
     if (
       f.kind === 'work-item' &&
       f.status !== undefined &&
       !TERMINAL_STATUSES.has(f.status) &&
-      f.status !== 'needs-review' &&
+      !f.review &&
       !f.archived &&
       f.updatedDate !== undefined &&
       daysBetween(f.updatedDate, today) >= nrDays
     ) {
       const ast = parseItemFile(file.text);
       if (ast.fm) {
-        fmSet(ast.fm, 'status', 'needs-review');
+        fmSet(ast.fm, 'review', 'needed');
         fmSet(ast.fm, 'updated', opts.now);
         write(file.absPath, serializeItem(ast));
-        actions.push({ relPath: f.relPath, action: `stamped needs-review (untouched since ${f.updatedDate})` });
+        actions.push({ relPath: f.relPath, action: `stamped review: needed (untouched since ${f.updatedDate})` });
       }
       continue;
     }

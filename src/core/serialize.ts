@@ -13,6 +13,7 @@ import type {
   Section,
   Step,
 } from './model.js';
+import { orderedRows } from './section-rows.js';
 import { serializeFrontmatter } from './fm.js';
 
 export function serializePointer(p: PointerLine): string {
@@ -22,7 +23,7 @@ export function serializePointer(p: PointerLine): string {
 export function serializeStep(s: Step): string[] {
   const anchor = s.anchor ? ` <!-- ^${s.anchor} -->` : '';
   const out = [`- [${s.mark}] ${s.text}${anchor}`];
-  for (const c of s.continuations) out.push(`      ${c.kw}: [${c.label}](${c.target})`);
+  for (const c of s.continuations) out.push(...(c.rawLeadingBlanks ?? []), `      ${c.kw}: [${c.label}](${c.target})`);
   return out;
 }
 
@@ -33,13 +34,13 @@ function serializeSection(s: Section): string[] {
     case 'malformed':
       return [...head, ...s.lines];
     case 'checklist':
-      return [...head, ...s.steps.flatMap(serializeStep)];
+      return [...head, ...orderedRows(s, s.steps).flatMap(r => r.kind === 'entry' ? serializeStep(r.entry) : [r.raw])];
     case 'links':
-      return [...head, ...s.entries.map((e) => `- ${e.kindLabel}: [${e.label}](${e.target})`)];
+      return [...head, ...orderedRows(s, s.entries).map(r => r.kind === 'entry' ? `- ${r.entry.kindLabel}: [${r.entry.label}](${r.entry.target})` : r.raw)];
     case 'docs':
       return [
         ...head,
-        ...s.entries.map((e) => `- [[${e.docId}]] ${e.title} (${e.docKind}) -> ${e.relPath}`),
+        ...orderedRows(s, s.entries).map(r => r.kind === 'entry' ? `- [[${r.entry.docId}]] ${r.entry.title} (${r.entry.docKind}) -> ${r.entry.relPath}` : r.raw),
       ];
   }
 }
@@ -78,7 +79,7 @@ export function serializeDashboard(f: DashboardFile): string {
         const e = r.entry;
         const status = e.status !== undefined ? `[${e.status}] ` : '';
         const staged = e.stagedCount !== undefined ? `(${e.stagedCount} staged) ` : '';
-        lines.push(`- ${status}${staged}${e.title} — ${e.date} -> ${e.relPath}`);
+        lines.push(`- ${status}${staged}${e.review ? `(review: ${e.review}) ` : ''}${e.title} — ${e.date} -> ${e.relPath}`);
       } else if (r.kind === 'overflow') {
         lines.push(`- +${r.count} more in ${r.dir}/`);
       } else {

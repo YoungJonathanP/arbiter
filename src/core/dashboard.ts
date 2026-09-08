@@ -1,15 +1,11 @@
-// Dashboard (tier 1) regeneration — PROTOCOL.md#tier-1, grammar §7.
-// Two paths, one output (gate 5):
-//   regenIncremental: previous entries + items whose `updated` > previous
-//     `generated`; entries leave only on an observed transition.
-//   regenFull: every item, reconciling hand-added entries and undatable raw
-//     items against the previous dashboard (dated evidence beats mtimes).
-// Both are pure functions of (facts, previous dashboard, now).
+// Dashboard projections always use current facts; timestamps are event metadata.
 
-import type { DashboardEntry, DashboardFile, DashRow, Frontmatter } from './model.js';
-import { fmGetRaw, fmSetRaw } from './fm.js';
+import type { DashboardEntry, DashRow, Frontmatter } from './model.js';
+import { fmSetRaw } from './fm.js';
 import type { ItemFacts, Nesting } from './facts.js';
 import { computeNesting, daysBetween, isTerminal } from './facts.js';
+import { visibleFacts } from './visibility.js';
+import { sha256 } from './corpus.js';
 import { parseDashboard } from './parse.js';
 import { serializeDashboard } from './serialize.js';
 
@@ -30,12 +26,13 @@ export interface RegenOptions {
   /** raw scalar of PROTOCOL.md `version:` (quotes preserved) */
   protocolRaw: string;
   generator?: string;
+  /** Digest of verified visible source inputs, supplied by a snapshot reader. */
+  inputs?: string;
 }
 
 interface Candidate {
   entry: DashboardEntry;
-  facts?: ItemFacts; // undefined = hand-added entry whose file is missing
-  prevOrder: number;
+  facts: ItemFacts;
 }
 
 function entryFor(f: ItemFacts, nest: Nesting, prevDate?: string): DashboardEntry {
@@ -47,6 +44,7 @@ function entryFor(f: ItemFacts, nest: Nesting, prevDate?: string): DashboardEntr
   return {
     status: f.kind === 'work-item' ? f.status : undefined,
     stagedCount: staged > 0 ? staged : undefined,
+    review: f.review,
     title: f.title,
     date,
     relPath: f.relPath,
@@ -61,23 +59,8 @@ function agedOff(status: string | undefined, entryDate: string, today: string): 
 function buildCards(candidates: Map<string, Candidate[]>, today: string, nest: Nesting): { label: string; count: number; rows: DashRow[] }[] {
   const cards = [];
   for (const def of CARDS) {
-    const list = candidates.get(def.dir) ?? [];
-    // dedupe by path (an item both in prev and changed keeps its fresher form:
-    // facts-backed candidates win over prev-only ones)
-    const byPath = new Map<string, Candidate>();
-    for (const c of list) {
-      const cur = byPath.get(c.entry.relPath);
-      if (!cur || (c.facts && !cur.facts)) byPath.set(c.entry.relPath, c);
-    }
-    let all = [...byPath.values()];
-    // observed transitions: archived items, aged-off terminal items, and
-    // sub-items (re-parented under a same-dir item — grammar §7 membership) leave
-    all = all.filter(
-      (c) => !(c.facts?.archived) && !agedOff(c.entry.status, c.entry.date, today) && !(c.facts && nest.isSub(c.facts.ref)),
-    );
-
-    const backed = all.filter((c) => c.facts);
-    const orphans = all.filter((c) => !c.facts).sort((a, b) => a.prevOrder - b.prevOrder);
+    const backed = (candidates.get(def.dir) ?? []).filter(c =>
+      !c.facts.archived && !agedOff(c.entry.status, c.entry.date, today) && !nest.isSub(c.facts.ref));
 
     let rows: DashRow[] = [];
     let count: number;
@@ -87,12 +70,12 @@ function buildCards(candidates: Map<string, Candidate[]>, today: string, nest: N
         const at = isTerminal(a.entry.status) ? 1 : 0;
         const bt = isTerminal(b.entry.status) ? 1 : 0;
         if (at !== bt) return at - bt;
-        const au = a.facts?.updatedRaw ?? a.entry.date;
-        const bu = b.facts?.updatedRaw ?? b.entry.date;
+        const au = a.facts?.updatedRaw?.replace(/^["']|["']$/g, '') ?? a.entry.date;
+        const bu = b.facts?.updatedRaw?.replace(/^["']|["']$/g, '') ?? b.entry.date;
         if (au !== bu) return au < bu ? 1 : -1;
         return a.entry.relPath < b.entry.relPath ? -1 : 1;
       });
-      const entries = [...backed, ...orphans];
+      const entries = backed;
       count = entries.length;
       rows = entries.map((c) => ({ kind: 'entry', entry: c.entry }));
     } else {
@@ -101,7 +84,7 @@ function buildCards(candidates: Map<string, Candidate[]>, today: string, nest: N
         if (a.entry.date !== b.entry.date) return a.entry.date < b.entry.date ? 1 : -1;
         return a.entry.relPath < b.entry.relPath ? -1 : 1;
       });
-      const entries = [...backed, ...orphans];
+      const entries = backed;
       count = entries.length;
       const shown = entries.slice(0, RECORD_CARD_LIMIT);
       rows = shown.map((c) => ({ kind: 'entry', entry: c.entry }));
@@ -114,14 +97,13 @@ function buildCards(candidates: Map<string, Candidate[]>, today: string, nest: N
   return cards;
 }
 
-function buildFrontmatter(prevFm: Frontmatter | null, maxUpdated: string, opts: RegenOptions): Frontmatter {
+function buildFrontmatter(maxUpdated: string, opts: RegenOptions): Frontmatter {
   const fm: Frontmatter = { entries: [] };
-  const prevUpdated = fmGetRaw(prevFm, 'updated') ?? '';
-  const updated = maxUpdated > prevUpdated ? maxUpdated : prevUpdated;
-  fmSetRaw(fm, 'updated', updated !== '' ? updated : opts.now);
+  fmSetRaw(fm, 'updated', maxUpdated || opts.now);
   fmSetRaw(fm, 'generator', opts.generator ?? 'arbiter-cli');
   fmSetRaw(fm, 'generated', opts.now);
   fmSetRaw(fm, 'protocol', opts.protocolRaw);
+  fmSetRaw(fm, 'inputs', opts.inputs!);
   return fm;
 }
 
@@ -131,124 +113,34 @@ const POINTER = {
   reminder: 'open only the -> path you need; a stale index is advisory — item files are truth',
 };
 
-function assembleDashboard(
-  candidates: Map<string, Candidate[]>,
-  strays: Map<string, DashRow[]>,
-  prev: DashboardFile | null,
-  maxUpdated: string,
-  opts: RegenOptions,
-  nest: Nesting,
-): string {
-  const today = opts.now.slice(0, 10);
-  const cards = buildCards(candidates, today, nest);
-  // hand-added stray lines are never deleted (PROTOCOL#tier-1)
-  for (const card of cards) {
-    const s = strays.get(card.label);
-    if (s) card.rows.push(...s);
-  }
-  const dash: DashboardFile = {
-    fm: buildFrontmatter(prev?.fm ?? null, maxUpdated, opts),
-    cards,
-    pointer: prev?.pointer ?? POINTER,
-  };
-  return serializeDashboard(dash);
-}
-
-function collectPrev(prev: DashboardFile | null): {
-  entries: Map<string, { entry: DashboardEntry; order: number }>;
-  strays: Map<string, DashRow[]>;
-} {
-  const entries = new Map<string, { entry: DashboardEntry; order: number }>();
-  const strays = new Map<string, DashRow[]>();
-  if (prev) {
-    let order = 0;
-    for (const card of prev.cards) {
-      for (const row of card.rows) {
-        if (row.kind === 'entry') entries.set(row.entry.relPath, { entry: row.entry, order: order++ });
-        else if (row.kind === 'stray') {
-          const list = strays.get(card.label) ?? [];
-          list.push(row);
-          strays.set(card.label, list);
-        }
-      }
-    }
-  }
-  return { entries, strays };
-}
-
 /** Full rebuild: every item, reconciled against the previous dashboard when present. */
 export function regenFull(facts: ItemFacts[], prevText: string | null, opts: RegenOptions): string {
+  facts = visibleFacts(facts);
+  opts = { ...opts, inputs: opts.inputs ?? `sha256:${sha256(JSON.stringify([...facts].sort((a, b) => a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0)))}` };
   const prev = prevText !== null ? parseDashboard(prevText) : null;
-  const { entries: prevEntries, strays } = collectPrev(prev);
+  const prevDates = new Map(prev?.cards.flatMap(c => c.rows.flatMap(r => r.kind === 'entry' ? [[r.entry.relPath, r.entry.date] as const] : [])) ?? []);
   const nest = computeNesting(facts);
   const candidates = new Map<string, Candidate[]>();
   let maxUpdated = '';
   for (const f of facts) {
-    if (f.updatedRaw !== undefined && f.updatedRaw > maxUpdated) maxUpdated = f.updatedRaw;
-    const prevE = prevEntries.get(f.relPath);
+    if (f.updatedRaw !== undefined) {
+      const updated = f.updatedRaw.replace(/^[\"']|[\"']$/g, '');
+      if (updated > maxUpdated) maxUpdated = updated;
+    }
+    const prevDate = prevDates.get(f.relPath);
     const list = candidates.get(f.dir) ?? [];
-    list.push({ entry: entryFor(f, nest, prevE?.entry.date), facts: f, prevOrder: prevE?.order ?? Number.MAX_SAFE_INTEGER });
+    list.push({ entry: entryFor(f, nest, prevDate), facts: f });
     candidates.set(f.dir, list);
-    prevEntries.delete(f.relPath);
   }
-  // hand-added entries whose file does not exist: preserved, never deleted
-  for (const [relPath, { entry, order }] of prevEntries) {
-    const dir = relPath.split('/')[0]!;
-    const list = candidates.get(dir) ?? [];
-    list.push({ entry, prevOrder: order });
-    candidates.set(dir, list);
-  }
-  return assembleDashboard(candidates, strays, prev, maxUpdated, opts, nest);
+  // Unverifiable carried entries/strays cannot establish visibility.
+  return serializeDashboard({
+    fm: buildFrontmatter(maxUpdated, opts),
+    cards: buildCards(candidates, opts.now.slice(0, 10), nest),
+    pointer: POINTER,
+  });
 }
 
-/** Incremental: previous entries + items whose `updated` is newer than the previous `generated`. */
+/** Compatibility entry point: callers already scan every source file. */
 export function regenIncremental(facts: ItemFacts[], prevText: string, opts: RegenOptions): string {
-  const prev = parseDashboard(prevText);
-  const generated = (prev.fm && fmGetRaw(prev.fm, 'generated')) || '';
-  const { entries: prevEntries, strays } = collectPrev(prev);
-  const factsByPath = new Map(facts.map((f) => [f.relPath, f]));
-  const nest = computeNesting(facts);
-
-  const candidates = new Map<string, Candidate[]>();
-  let maxUpdated = '';
-  const push = (c: Candidate, dir: string) => {
-    const list = candidates.get(dir) ?? [];
-    list.push(c);
-    candidates.set(dir, list);
-  };
-
-  // fold in every item whose updated is newer than the previous generated
-  const folded = new Set<string>();
-  for (const f of facts) {
-    if (f.updatedRaw !== undefined && f.updatedRaw > generated) {
-      if (f.updatedRaw > maxUpdated) maxUpdated = f.updatedRaw;
-      const prevE = prevEntries.get(f.relPath);
-      push({ entry: entryFor(f, nest, prevE?.entry.date), facts: f, prevOrder: prevE?.order ?? Number.MAX_SAFE_INTEGER }, f.dir);
-      folded.add(f.relPath);
-    }
-  }
-  // previous entries persist unless a transition is observed (buildCards drops
-  // archived/aged-off); staged flags are re-checked — proposals are not touches
-  for (const [relPath, { entry, order }] of prevEntries) {
-    if (folded.has(relPath)) continue;
-    const f = factsByPath.get(relPath);
-    if (f) {
-      const staged = nest.rolledStaged(f);
-      const refreshed: DashboardEntry = {
-        ...entry,
-        stagedCount: staged > 0 ? staged : undefined,
-        title: f.title,
-      };
-      push({ entry: refreshed, facts: f, prevOrder: order }, f.dir);
-    } else {
-      push({ entry, prevOrder: order }, relPath.split('/')[0]!);
-    }
-  }
-  // records beyond the top-5 window never left entries, so they are not in
-  // prevEntries; fold them from facts so overflow counts stay truthful
-  for (const f of facts) {
-    if (folded.has(f.relPath) || prevEntries.has(f.relPath)) continue;
-    push({ entry: entryFor(f, nest), facts: f, prevOrder: Number.MAX_SAFE_INTEGER }, f.dir);
-  }
-  return assembleDashboard(candidates, strays, prev, maxUpdated, opts, nest);
+  return regenFull(facts, prevText, opts);
 }

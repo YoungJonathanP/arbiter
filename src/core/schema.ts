@@ -32,6 +32,17 @@ export class SchemaSet {
     return set;
   }
 
+  /** Build from an already-read corpus so schemas and facts share input bytes. */
+  static fromFiles(files: { kind: string; text: string }[]): SchemaSet {
+    const set = new SchemaSet();
+    for (const file of files) {
+      if (file.kind !== 'schema') continue;
+      const schema = parseTypeSchema(file.text);
+      if (schema.schema) set.raw.set(schema.schema, schema);
+    }
+    return set;
+  }
+
   names(): string[] {
     return [...this.raw.keys()].filter((n) => !n.startsWith('_'));
   }

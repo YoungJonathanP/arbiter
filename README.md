@@ -21,7 +21,7 @@ Progressive disclosure is the core design principle: each tier holds just enough
 | **2 — Card / Item** | Full item list per card; item detail page | High-level summary, time fields (started / estimated completion / due, with overdue flagging), status checklist (done / in-flight / blocked-with-blocker-link / todo), hyperlinked artifacts (PRs, design docs, Figma, Confluence), links into tier 3 |
 | **3 — Documents** | Rendered detail documents | Plans, investigations, reports, notes — the full-context material |
 
-Status colors: **todo = white**, **done = green**, **in-flight = blue**, **blocked = red**, **dropped = orange** (terminal, excluded from accomplishments), **needs-review = purple** (set by triage when an item goes untouched 14+ days). Tier-2 lists paginate at 10; the journal is date-segmented — its card shows the 5 most recent entries and its tier-2 page shows the last week first, older entries behind pagination.
+Status colors: **todo = white**, **done = green**, **in-flight = blue**, **blocked = red**, **dropped = orange** (terminal, excluded from accomplishments), **review = purple** (`review: needed` after 14+ untouched days, preserving execution status; legacy `needs-review` has unknown prior state). Tier-2 lists paginate at 10; the journal is date-segmented — its card shows the 5 most recent entries and its tier-2 page shows the last week first, older entries behind pagination.
 
 Accomplishments are records rather than work items — review-ready impact statements built for performance-review inspection by humans and agents alike. **Evidence is the driver**: every accomplishment carries verifiable links (merged PRs, published docs) under its Evidence section. Journal and meeting entries carry a subtle **private** toggle; agents skip private items unless explicitly directed.
 
@@ -51,13 +51,19 @@ Agents may operate Arbiter with full autonomy, so clean navigation and minimal c
 - **`PROTOCOL.md` is read once** — it defines how to read/write each tier, checklist mark semantics, the tier-1 ordering rule, and capture etiquette.
 - **Every other file ends with a single scoped pointer line** (`<!-- arbiter:tier-2 · PROTOCOL.md#tier-2 · … -->`) naming its tier and the section that governs it. Instructions are never repeated per file, so visiting an item never loads navigation guidance meant for its neighbors.
 - **Pointers are the only navigation**: tier-1 entries end with `-> path`; tier-2 links tier-3 docs explicitly. An agent opens exactly the files its current tier points to — no bulk reads.
-- **Human entries are always valid**: a title plus prose is an acceptable file. Missing fields get defaults (status=todo, type from directory, updated from mtime), and the next agent touch normalizes the entry without ever discarding human prose. Humans may also hand-add entries at any tier — including the dashboard index — and the app reconciles them into item stubs on regeneration. Humans get friendliness; agents get safeguards.
+- **Human entries are always valid**: a title plus prose is an acceptable file. Missing fields get defaults (status=todo, type from directory, updated from mtime), and the next agent touch normalizes the entry without ever discarding human prose. Humans may also hand-add entries at any tier — including the dashboard index. Unverifiable dashboard additions are omitted from projections for privacy; CLI regen retains the old dashboard in its commit journal for explicit item capture. Humans get friendliness; agents get safeguards.
 - **Slugs are immutable addresses** of the form `<base>-YYYYqN`; recurrence within ±2 quarters reopens the item, beyond that it's new. Items may carry `parent:`/`related:` frontmatter for epics and loose sibling references, reached only when the current item lacks the answer.
 - **Concurrent writes are arbitrated**: uncontended edits apply directly (write-then-verify); contended or high-stakes edits stage as intent-carrying proposal files in `<id>.staged/` and are merged by confluent resolution rules — no silent loss at any writer count. See [`docs/arbitration.md`](docs/arbitration.md).
 
 Arbiter is collaborative and headed toward being an application (likely a web app) so that index regeneration, pagination, triage, and archive stamping happen programmatically instead of burdening agents. Logseq remains the closest architectural reference, now on both sides of its 2026 split: its file-canonical version validates files-as-truth at Arbiter's scale, and its database version contributes the typed card-schema and parse-to-index patterns — see [`docs/logseq-investigation.md`](docs/logseq-investigation.md).
 
 ## Getting started
+
+The [improvement checklist](docs/improvement-plan.md) turns the architecture review
+and trial feedback into nine independently assignable tasks. It includes a
+[task-handoff design](docs/task-handoffs.md) and a copyable checkpoint template
+for continuing work in a fresh agent session. The index distinguishes completed
+contracts from the remaining capture/export and navigation work.
 
 Setting this up on a new machine, or looking for what to work on next? [`HANDOFF.md`](HANDOFF.md) covers fresh-machine setup, the data-directory bootstrap, and current state; [`docs/v0.5-trial-feedback-backlog.md`](docs/v0.5-trial-feedback-backlog.md) holds the 17 open improvements with code pointers.
 
@@ -80,7 +86,8 @@ During development (no build needed):
 
 ```sh
 npm run --silent arbiter -- validate --data arbiter-data
-npm run --silent arbiter -- regen    --data arbiter-data
+npm run --silent arbiter -- init     --data /tmp/my-new-arbiter-kb
+npm run --silent arbiter -- doctor   --data /tmp/my-new-arbiter-kb
 ```
 
 After `npm run build`, `bin/arbiter.js` is a plain executable. To put `arbiter` on your PATH for the dev trial, use the **temporary** dev bind:
@@ -93,23 +100,58 @@ scripts/dev-bind.sh uninstall   # removes everything it installed (fenced marker
 This is scaffolding, not the install story: it hard-codes this repo's paths and edits bash profiles. The v1.0 install story ([`docs/launch-plan.md`](docs/launch-plan.md)) replaces it, and running `uninstall` is part of that cleanup. Once bound:
 
 ```sh
+arbiter init --data <dir>         # bootstrap a missing or empty directory explicitly
+arbiter doctor --data <dir>       # check protocol/schema identity and corpus health
 arbiter validate                 # judge the data directory against grammar + type schemas
-arbiter regen [--full]           # regenerate DASHBOARD.md (incremental by default)
-arbiter triage                   # needs-review stamps, archive flags, 24h staged sweep
+arbiter regen [--full]           # regenerate DASHBOARD.md (both modes read current facts)
+arbiter triage                   # review metadata, archive flags, 24h staged sweep
 arbiter query <sub> [--json]     # overdue | needs-review | staged | active <dir> | page <dir> [n] | chain <ref>
-arbiter new <type> <title...>    # create an item (slug form + reopen rule enforced)
-arbiter arbitrate <dir>/<id>     # apply/resolve staged proposals (pure, confluent)
+arbiter new <type> <title...> [--date YYYY-MM-DD] [--force] # dated item; reopen rule enforced
+arbiter propose <dir>/<id> --op <op> --intent <why>  # unique staged intent
+arbiter arbitrate <dir>/<id>     # verify effects, retain receipts, clean up staged intent
+arbiter recover [--dry-run]      # inspect or recover interrupted commits
 arbiter write <path> --if-match <sha256|new>   # CAS write; content from stdin or --file
 arbiter normalize [--dry-run]    # liberal → canonical repair pass (idempotent)
-arbiter serve [--port 4870]      # read-only local renderer (visual inspection)
+arbiter serve [--port 4870]      # local renderer with checkpoint capture
 arbiter hash <path>              # sha256 for the --if-match flow
 ```
 
+Current projections share privacy filtering across dashboards, queries and human/agent
+previews. The renderer reads current inputs on every request; its raw dashboard is
+the current projection. See [projection and review decisions](docs/v0.4.9-projections.md).
+
+Malformed checklist, artifact and detail-doc lines retain their text and valid
+neighbors. Validation locates the source line and expected syntax; the renderer
+keeps recognized navigation. See [parser recovery](docs/v0.4.10-parser-recovery.md).
+
+Task checkpoints have a versioned [contract](docs/v0.4.11-checkpoints.md): a fixed
+current file, immutable prior bytes, selected input revisions and separate
+readiness. Plan inputs can precede Checklist. Generic CAS writes preserve
+checkpoint history. [Capture/preview/copy/export tooling](docs/v0.4.12-handoff-tooling.md)
+is available through `checkpoint`, `handoff` and the local task editor.
+
+New KBs bootstrap protocol/base 0.4.12 from `assets/contract/`; concrete schemas
+remain 0.4. Legacy 0.4.6 corpora remain supported. Cooperating writers share a local
+commit lock and retain recovery history in `.arbiter/transactions/`. Back up that
+directory with the KB: it is not a disposable index. New arbitration receipts live
+under `Arbitration history`, preserving existing Summary prose. External editors
+do not share the atomic-write guarantee; detected conflicts preserve snapshots
+for reconciliation. See [the commit contract](docs/v0.4.8-recoverable-commits.md).
+
 Bare `arbiter` (no command) defaults to `serve` — the everyday entry point.
+`arbiter help`, `--help` and `-h` print usage and exit without selecting a KB.
+Unknown options, missing values and unused positional arguments fail explicitly.
+`validate` checks the whole KB; scoped path arguments are rejected.
+
+`--date` sets the meeting/record date and the dated or quarter ID suffix, including
+future dates. For tasks/goals it selects the quarter and reopen window, not a due
+date. `created` and `updated` remain capture time; `--now` supplies a deterministic
+local capture clock. Both bare and `sha256:`-prefixed hashes work in `write`.
+This digest repair does not provide concurrent-write safety; that remains T02.
 
 ### Visual inspection (`arbiter serve`)
 
-`arbiter serve` starts a **read-only, local-only** web renderer over the data directory — the v0.6 renderer's scaffold, pulled forward so the dogfood trial can validate inputs visually. It renders all three tiers (dashboard cards with status colors and staged flags, item pages with checklists/blockers/artifacts and pending proposals inline, tier-3 docs), plus a *view as agent* link on every page showing the exact file bytes. Every request re-reads the files, so a browser refresh always shows current truth; there is no write path.
+`arbiter serve` starts a **local-only** web renderer over the data directory — the v0.6 renderer's scaffold, pulled forward so the dogfood trial can validate inputs visually. It renders all three tiers (dashboard cards with status colors and staged flags, item pages with checklists/blockers/artifacts and pending proposals inline, tier-3 docs), plus a *view as agent* link on every page showing the exact file bytes. Every request re-reads the files, so a browser refresh always shows current truth; the task handoff panel is the explicit checkpoint/owner capture path. Copy and file export recheck the exact reviewed packet.
 
 **Privacy posture**: the server binds `127.0.0.1` only — the data directory is personal work data and is never exposed to a public audience. (`--host` can override the bind address, loudly, for e.g. a private tailnet; don't.) The GitHub repo is likewise private.
 
@@ -119,7 +161,13 @@ Bare `arbiter` (no command) defaults to `serve` — the everyday entry point.
 ![A contended item with two staged proposals](docs/img/item-staged.png)
 *The arbitration surface (fixture corpus): two agents staged competing intents against the same base — one closing the task with PR evidence, one blocking it on a migration. The banner names the exact command; each proposal shows its ops and its why. `arbiter arbitrate` resolves this deterministically.*
 
-Every command takes `--data <dir>` (default: `./arbiter-data`) and `--now <YYYY-MM-DDTHH:MM>` (for deterministic runs; defaults to wall clock). CI runs `npm test` plus `arbiter validate` over both the fixture corpus and the frozen dogfood corpus in `arbiter-data/`. That in-repo corpus is a conformance target, not the live KB — the live KB lives outside this repo at `$ARBITER_DATA` (see CLAUDE.md).
+Data selection is `--data <dir>` > `$ARBITER_DATA` > nearest `arbiter-data/`
+walking up from cwd. The selected path and source are printed on stderr. Missing
+directories fail; empty directories are explicitly reported as uninitialized by
+`validate`/`doctor`. `init` requires explicit `--data` and never overwrites content
+or changes shell profiles. Clock-using commands accept `--now <YYYY-MM-DDTHH:MM>`
+(see help). [CLI decisions](docs/t01-cli-decisions.md) document compatibility
+checks, date semantics, exit statuses and limitations. CI runs `npm test` plus `arbiter validate` over both the fixture corpus and the frozen dogfood corpus in `arbiter-data/`. That in-repo corpus is a conformance target, not the live KB — the live KB lives outside this repo at `$ARBITER_DATA` (see CLAUDE.md).
 
 ## Status
 

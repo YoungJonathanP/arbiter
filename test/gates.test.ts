@@ -149,7 +149,9 @@ test('gate 5 — regen with the fixture timestamp reproduces the hand-authored d
   const facts = extractFacts(FIXTURE_DIR, files, schemas);
   const prev = fs.readFileSync(path.join(FIXTURE_DIR, 'DASHBOARD.md'), 'utf8');
   const opts = { now: '2026-07-05T17:30', protocolRaw: '"0.4.6"', generator: 'hand-authored-fixture' };
-  assert.equal(regenIncremental(facts, prev, opts), prev, 'regen does not reproduce the fixture dashboard');
+  const out = regenIncremental(facts, prev, opts);
+  assert.match(out, /^inputs: sha256:[a-f0-9]{64}$/m);
+  assert.equal(out.replace(/^inputs: .*\n/m, ''), prev, 'visible fixture content is unchanged; 0.4.9 adds input provenance');
 });
 
 test('gate 5 — re-parenting is an observed transition: entry leaves, then returns, never lost or duplicated', () => {

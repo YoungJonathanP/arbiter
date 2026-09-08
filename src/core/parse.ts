@@ -17,6 +17,7 @@ import type {
   PointerLine,
   ProposalFile,
   Section,
+  SectionRow,
   Step,
   TypeSchema,
   FieldDef,
@@ -43,6 +44,8 @@ export function classifyPath(relPath: string): FileKind {
   if (relPath === 'PROTOCOL.md') return 'protocol';
   if (relPath === 'DASHBOARD.md') return 'dashboard';
   if (parts[0] === 'types') return 'schema';
+  if (/^tasks\/[a-z0-9][a-z0-9-]*\/checkpoint\.md$/.test(relPath)) return 'checkpoint';
+  if (/^tasks\/[a-z0-9][a-z0-9-]*\/checkpoints\/[^/]+\.md$/.test(relPath)) return 'checkpoint-history';
   if (parts.length === 3 && parts[1]!.endsWith('.staged')) return 'proposal';
   if (parts.length === 3) return 'doc';
   return 'item';
@@ -103,76 +106,76 @@ export function parseStepLine(line: string): { mark: Mark; text: string; anchor?
   return { mark, text, anchor };
 }
 
-function parseChecklist(lines: string[]): Step[] | null {
-  const steps: Step[] = [];
-  for (const line of stripTrailingBlanks(lines)) {
-    if (line === '') continue; // tolerate internal blanks (liberal)
-    const cont = CONT_RE.exec(line);
-    if (cont) {
-      const last = steps[steps.length - 1];
-      if (!last) return null;
-      last.continuations.push({ kw: cont[2] as 'blocked-by' | 'see', label: cont[3]!, target: cont[4]! });
-      continue;
-    }
-    const s = parseStepLine(line);
-    if (!s) return null;
-    steps.push({ mark: s.mark, text: s.text, anchor: s.anchor, continuations: [] });
-  }
-  return steps;
-}
-
-// --- link / docs entries -----------------------------------------------------
+// --- recoverable structured sections ------------------------------------------
 
 const LINK_ENTRY_RE = /^[-*+] ([^:]+): \[([^\]]*)\]\(([^)]+)\)$/;
 const DOCS_ENTRY_RE = /^[-*+] \[\[([a-z0-9][a-z0-9-]*)\]\] (.*) \((plan|investigation|report|note)\) -> (\S+)$/;
 
-function parseLinkEntries(lines: string[]): LinkEntry[] | null {
-  const entries: LinkEntry[] = [];
-  for (const line of stripTrailingBlanks(lines)) {
-    if (line === '') continue;
-    const m = LINK_ENTRY_RE.exec(line);
-    if (!m) return null;
-    entries.push({ kindLabel: m[1]!, label: m[2]!, target: m[3]! });
-  }
-  return entries;
-}
-
-function parseDocsEntries(lines: string[]) {
-  const entries = [];
-  for (const line of stripTrailingBlanks(lines)) {
-    if (line === '') continue;
-    const m = DOCS_ENTRY_RE.exec(line);
-    if (!m) return null;
-    entries.push({ docId: m[1]!, title: m[2]!, docKind: m[3]!, relPath: m[4]! });
-  }
-  return entries;
-}
+export const EXPECTED_ENTRY = {
+  checklist: 'step: - [<mark>] <text> <!-- ^anchor --> (optional anchor); continuation: six spaces + blocked-by: or see: [label](target), after a recognized step',
+  links: 'link-entry: - <kind>: [<label>](<target>); put annotations inside the label',
+  docs: 'docs-entry: - [[<doc-id>]] <title> (<plan|investigation|report|note>) -> <data-root-relative-path>; put annotations inside the title',
+};
 
 // --- item files ----------------------------------------------------------------
 
-function parseSection(heading: string, lines: string[]): Section {
+function parseSection(heading: string, lines: string[], firstLine: number, sourceLines?: readonly number[]): Section {
   const body = stripTrailingBlanks(lines);
-  if (heading === 'Checklist') {
-    const steps = parseChecklist(body);
-    return steps ? { kind: 'checklist', heading, steps } : { kind: 'malformed', heading, lines: body };
-  }
-  if (heading === 'Artifacts' || heading === 'Evidence') {
-    const entries = parseLinkEntries(body);
-    return entries ? { kind: 'links', heading, entries } : { kind: 'malformed', heading, lines: body };
-  }
-  if (heading === 'Detail docs') {
-    const entries = parseDocsEntries(body);
-    return entries ? { kind: 'docs', heading, entries } : { kind: 'malformed', heading, lines: body };
-  }
-  // Summary and opaque sections are prose
-  return { kind: 'prose', heading, lines: body };
+  const section: Section = heading === 'Checklist' ? { kind: 'checklist', heading, steps: [], rawRows: [] }
+    : heading === 'Artifacts' || heading === 'Evidence' || heading === 'Plan inputs' ? { kind: 'links', heading, entries: [], rawRows: [] }
+    : heading === 'Detail docs' ? { kind: 'docs', heading, entries: [], rawRows: [] }
+    : { kind: 'prose', heading, lines: body };
+  if (section.kind === 'prose') return section;
+  const rows = section.rawRows!;
+  let last: Step | undefined;
+  let blanks: SectionRow[] = [];
+  body.forEach((line, i) => {
+    const rawLine = sourceLines?.[firstLine + i - 1] ?? firstLine + i;
+    if (line === '') { blanks.push({ kind: 'blank', raw: line, line: rawLine }); return; }
+    if (section.kind === 'checklist') {
+      const cont = CONT_RE.exec(line);
+      if (cont && last) {
+        last.continuations.push({ kw: cont[2] as 'blocked-by' | 'see', label: cont[3]!, target: cont[4]!, rawLine,
+          ...(blanks.length ? { rawLeadingBlanks: blanks.map(() => '') } : {}) });
+        blanks = [];
+        return;
+      }
+    }
+    rows.push(...blanks);
+    blanks = [];
+    if (section.kind === 'checklist') {
+      const step = parseStepLine(line);
+      last = step ? { ...step, continuations: [], rawLine } : undefined;
+      if (last) {
+        rows.push({ kind: 'entry', index: section.steps.length, line: rawLine });
+        section.steps.push(last);
+        return;
+      }
+    } else if (section.kind === 'links') {
+      const m = LINK_ENTRY_RE.exec(line);
+      if (m) {
+        rows.push({ kind: 'entry', index: section.entries.length, line: rawLine });
+        section.entries.push({ kindLabel: m[1]!, label: m[2]!, target: m[3]!, rawLine });
+        return;
+      }
+    } else {
+      const m = DOCS_ENTRY_RE.exec(line);
+      if (m) {
+        rows.push({ kind: 'entry', index: section.entries.length, line: rawLine });
+        section.entries.push({ docId: m[1]!, title: m[2]!, docKind: m[3]!, relPath: m[4]!, rawLine });
+        return;
+      }
+    }
+    rows.push({ kind: 'opaque', raw: line, line: rawLine, expected: EXPECTED_ENTRY[section.kind] });
+  });
+  return section;
 }
 
 interface FileShell {
   fm: Frontmatter | null;
   title: string | null;
   preamble: string[];
-  sections: { heading: string; lines: string[] }[];
+  sections: { heading: string; lines: string[]; firstLine: number }[];
   /** prose between title and the first `## ` heading (raw files) */
   leadProse: string[];
   pointer: PointerLine | null;
@@ -211,16 +214,17 @@ function parseShell(text: string): FileShell {
     i++;
   }
 
-  const sections: { heading: string; lines: string[] }[] = [];
+  const sections: { heading: string; lines: string[]; firstLine: number }[] = [];
   while (i < body.length) {
     const heading = body[i]!.slice(3);
     i++;
+    const firstLine = (fmRes?.end ?? 0) + i + 1;
     const lines: string[] = [];
     while (i < body.length && !body[i]!.startsWith('## ')) {
       lines.push(body[i]!);
       i++;
     }
-    sections.push({ heading, lines });
+    sections.push({ heading, lines, firstLine });
   }
 
   return {
@@ -233,11 +237,11 @@ function parseShell(text: string): FileShell {
   };
 }
 
-export function parseItemFile(text: string): ItemFile {
+export function parseItemFile(text: string, sourceLines?: readonly number[]): ItemFile {
   const shell = parseShell(text);
   const sections: Section[] = [];
   if (shell.leadProse.length > 0) sections.push({ kind: 'prose', heading: '', lines: shell.leadProse });
-  for (const s of shell.sections) sections.push(parseSection(s.heading, s.lines));
+  for (const s of shell.sections) sections.push(parseSection(s.heading, s.lines, s.firstLine, sourceLines));
   return { fm: shell.fm, title: shell.title, sections, pointer: shell.pointer, preamble: shell.preamble };
 }
 
@@ -282,7 +286,10 @@ export function parseDashboardEntry(line: string): DashboardEntry | null {
     stagedCount = Number(sf[1]!);
     titlePart = titlePart.slice(sf[0].length);
   }
-  return { status, stagedCount, title: titlePart, date, relPath };
+  const reviewFlag = /^\(review: (needed|legacy-unknown)\) /.exec(titlePart);
+  const review = reviewFlag?.[1];
+  if (reviewFlag) titlePart = titlePart.slice(reviewFlag[0].length);
+  return { status, stagedCount, review, title: titlePart, date, relPath };
 }
 
 export function parseDashboard(text: string): DashboardFile {

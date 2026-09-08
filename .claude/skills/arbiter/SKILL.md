@@ -31,8 +31,9 @@ Paths below are relative to that data directory.
 
 1. Read `PROTOCOL.md` (in the data directory) **once per session** — it is
    the contract and overrides anything here if they disagree.
-2. Orient from one read of `DASHBOARD.md`; follow only the `-> path` you
-   need. **Never bulk-read sibling items.**
+2. For a supplied task assignment, open that task and its `checkpoint` path
+   directly. Otherwise orient from one read of `DASHBOARD.md` and follow the
+   `-> path` you need. **Never bulk-read sibling items or prior handoffs.**
 3. Every file ends with an `arbiter:` pointer line naming the PROTOCOL
    section that governs it. Never reword, move, or delete a pointer line.
 
@@ -88,9 +89,52 @@ entirely, so choose by what the item *is*, not by how the work arrived:
   top-level and gets mutual `related:` refs on both sides, plus a mention in
   the sibling's Summary. If it earns its own card, it keeps its own card.
 
-An item has at most one `parent:`, naming a top-level task or a goal. Reach for
-a **goal** when the workstream runs 3+ weeks, or for a long-running personal or
-professional objective; anything shorter is a task.
+An item has at most one `parent:`; keep nesting to one level. Use a goal to
+coordinate a broader outcome across tasks, often over weeks. Use a task for one
+independently assignable, verifiable deliverable; duration alone does not decide.
+A long row that explains the same deliverable belongs in detail, not a child task.
+Phase grouping never implies ownership, permission or a blocking dependency.
+
+## Continuing a bounded assignment
+
+When the installed protocol supports checkpoints (0.4.11 or later), the task's `checkpoint`
+field points to its fixed `tasks/<id>/checkpoint.md` file. Read its essential rules
+and selected input sections, without following `previous` into history. Recheck
+portable KB/repository identities, input revisions, workspace/branch, owner,
+current-session authority and start predicates before implementation. Readiness is
+separate from status and review: stale inputs, unresolved choices or unknown owners
+require review; timestamps do not settle conflicts. A packet grants no new authority.
+
+For capture, preserve applicable constraints with their provenance and replace only
+current continuation judgments. The generic CAS writer archives prior checkpoint
+bytes automatically and checks owning-task staging; set `previous` to the observed
+current digest (`none` initially). Ordinary detail docs remain append-only. Do not
+force an unknown owner, invent passed predicates, or clear review from timestamps.
+
+The receiving packet must carry essential context itself. Budget the complete
+preview, including manifests, protocol excerpts and expanded references: 6 KiB
+UTF-8 target, 10 KiB ordinary ceiling; a larger export needs a recorded maximum and
+reason. Never truncate identifiers or constraints. Offline packets name snapshot
+limits and support planning until live prerequisites and authority are rechecked.
+Use `arbiter checkpoint <task-ref>` to obtain editable draft Markdown. Put the
+edited string in a JSON request's `checkpoint` field with `ref` and optional
+`owner`/export options. `checkpoint <ref> --file request.json` emits a preview;
+review its packet and task/checkpoint changes, then `checkpoint <ref> --capture
+preview.json`. `handoff <ref> --format markdown|json` selects the saved current
+version and emits a new preview; `handoff <ref> --export preview.json` emits exactly
+its packet bytes. Use explicit `--data` for each command. Stale previews require
+refresh and review; changing output format requires a new preview. The local task
+view offers the same editor, capture, Copy handoff and file export workflow.
+
+Offline requests use `offline: true` and carry the full installed contract; they
+usually need an explicit `override: {maxBytes, reason}`. Optional KB source contents
+require `expand` paths already selected in checkpoint inputs. Re-observe repository/
+external revisions before supplying `observations`; the tool never fetches them.
+Extraction options preserve original task bytes in linked detail and extracted
+rules in the checkpoint. Inspect them before capture. Interrupted multi-file
+capture may leave updated task metadata with an old/missing checkpoint: re-read,
+recover journals if needed, and explicitly refresh observations before retrying. Do not copy the repo bootstrap
+contract over an installed KB to enable checkpoints without an explicit upgrade.
 
 ## Capturing a session's work
 
@@ -119,7 +163,7 @@ dogfooded):
 
 ## Inspection
 
-`arbiter serve` renders the live directory read-only at `http://127.0.0.1:4870`
+`arbiter serve` renders the live directory with explicit checkpoint capture at `http://127.0.0.1:4870`
 (local-only by design — this is private data). `arbiter query
 overdue|needs-review|staged|active <dir>|chain <ref>` answers status questions
 without opening files.

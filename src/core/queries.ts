@@ -1,5 +1,5 @@
 // Queries over the derived index. Anything a query produces that matters
-// (needs-review, archived) is written back to markdown by triage — the index
+// (review, archived) is written back to markdown by triage — the index
 // itself is never truth. All take an explicit `today` (never wall clock).
 
 import type { IndexDb } from './indexdb.js';
@@ -12,6 +12,7 @@ export interface ItemRow {
   kind: string;
   title: string;
   status: string | null;
+  review: string | null;
   updated: string | null;
   updated_date: string | null;
   date: string | null;
@@ -25,19 +26,18 @@ export interface ItemRow {
 const NON_ARCHIVED = `archived IS NULL`;
 const TERMINAL = `status IN ('done', 'dropped')`;
 // grammar §7 membership: sub-item iff parent resolves to an existing,
-// non-archived item in the same directory — sub-items stay off tier 1
-const TOP_LEVEL = `NOT EXISTS (
-  SELECT 1 FROM items p WHERE p.ref = items.parent AND p.dir = items.dir AND p.archived IS NULL
-)`;
+// nonterminal, non-archived item in the same directory; derived by computeNesting
+const TOP_LEVEL = `top_level = 1`;
 
 /** Relevance-ordered active set for a work-item dir: top-level items only (mirrors the tier-1 card). */
-export function activeSet(db: IndexDb, dir: string): ItemRow[] {
+export function activeSet(db: IndexDb, dir: string, today?: string): ItemRow[] {
   return db
     .prepare(
       `SELECT * FROM items WHERE dir = ? AND ${NON_ARCHIVED} AND ${TOP_LEVEL}
+       AND (? IS NULL OR NOT ${TERMINAL} OR updated_date IS NULL OR julianday(?) - julianday(updated_date) <= 7)
        ORDER BY (CASE WHEN ${TERMINAL} THEN 1 ELSE 0 END), updated DESC, ref`,
     )
-    .all(dir) as ItemRow[];
+    .all(dir, today ?? null, today ?? null) as ItemRow[];
 }
 
 /** Direct children of an item, derived from the children's parent refs (never stored). */
@@ -70,14 +70,13 @@ export function overdue(db: IndexDb, today: string): ItemRow[] {
     .all(today) as ItemRow[];
 }
 
-/** Non-terminal work items untouched for 14+ days: triage stamps needs-review. */
+/** Non-terminal work items untouched for 14+ days: triage stamps review: needed; include already flagged items. */
 export function needsReviewCandidates(db: IndexDb, today: string, days = 14): ItemRow[] {
   return db
     .prepare(
-      `SELECT * FROM items WHERE kind = 'work-item' AND NOT ${TERMINAL}
-       AND status != 'needs-review' AND ${NON_ARCHIVED}
-       AND updated_date IS NOT NULL
-       AND julianday(?) - julianday(updated_date) >= ?
+      `SELECT * FROM items WHERE kind = 'work-item' AND ${NON_ARCHIVED}
+       AND (review IS NOT NULL OR status = 'needs-review' OR (NOT ${TERMINAL} AND updated_date IS NOT NULL
+       AND julianday(?) - julianday(updated_date) >= ?))
        ORDER BY updated_date, ref`,
     )
     .all(today, days) as ItemRow[];
@@ -118,6 +117,7 @@ export function stagedItems(db: IndexDb): ItemRow[] {
  * never stored (PROTOCOL.md#slugs). Returns oldest → newest around `ref`.
  */
 export function chain(db: IndexDb, ref: string): string[] {
+  if (!db.prepare('SELECT ref FROM items WHERE ref = ?').get(ref)) return [];
   const prevOf = db.prepare(`SELECT prev FROM items WHERE ref = ?`);
   const nextOf = db.prepare(`SELECT ref FROM items WHERE prev = ? ORDER BY ref`);
   const back: string[] = [];

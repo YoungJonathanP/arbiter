@@ -16,16 +16,19 @@ export interface CorpusFile {
   kind: FileKind;
   text: string;
   mtime: Date;
+  /** Visible line index → original 1-based source line; present on filtered projections. */
+  sourceLines?: readonly number[];
 }
 
 export function sha256(text: string): string {
   return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
-export function walkCorpus(dataDir: string): CorpusFile[] {
+export function walkCorpus(dataDir: string, options: { includeHistory?: boolean } = {}): CorpusFile[] {
   const out: CorpusFile[] = [];
   const roots = ['PROTOCOL.md', 'DASHBOARD.md', 'types', ...ITEM_DIRS];
   const visit = (rel: string) => {
+    if (options.includeHistory === false && /^tasks\/[^/]+\/checkpoints(?:\/|$)/.test(rel)) return;
     const abs = path.join(dataDir, ...rel.split('/'));
     if (!fs.existsSync(abs)) return;
     const st = fs.statSync(abs);

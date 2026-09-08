@@ -5,20 +5,24 @@
 // hamburger + status legend, card board, sidenav, item blocks, agent view).
 //
 // Deliberately local-only: binds 127.0.0.1, serves nothing to a public
-// audience, writes nothing. Every request re-reads the files (no cache, no
+// audience; checkpoint capture is the explicit local mutation surface. Every request re-reads the files (no cache, no
 // watcher) — refresh the browser and you see the current truth. One
 // normalization path: rendering goes through the same core parser the CLI
 // and validator use.
 
-import * as fs from 'node:fs';
+import { handoffApi, handoffPanel, HANDOFF_JS } from './handoff.js';
+import { validateCorpus } from '../core/validate.js';
+import { SchemaSet } from '../core/schema.js';
+import { orderedRows } from '../core/section-rows.js';
+import type { SectionRow } from '../core/model.js';
 import * as http from 'node:http';
-import * as path from 'node:path';
-import { listStaged, stagedDirFor, walkCorpus } from '../core/corpus.js';
-import { computeNesting, extractFacts, isTerminal, type ItemFacts } from '../core/facts.js';
+import { stagedDirFor } from '../core/corpus.js';
+import { computeNesting, isTerminal, type ItemFacts } from '../core/facts.js';
 import { fmGet } from '../core/fm.js';
 import { ITEM_DIRS } from '../core/model.js';
 import { parseDashboard, parseItemFile, parseProposal } from '../core/parse.js';
-import { SchemaSet } from '../core/schema.js';
+import { readProjection } from '../core/projection.js';
+import { regenFull } from '../core/dashboard.js';
 import type { Section } from '../core/model.js';
 
 const MARK_TO_STATUS: Record<string, string> = { ' ': 'todo', '~': 'in-flight', '!': 'blocked', x: 'done' };
@@ -681,7 +685,7 @@ function page(title: string, activePath: string, facts: ItemFacts[], body: strin
     <main>${body}</main>
   </div>
 </div>
-<script>${NAV_JS}${COPY_JS}</script></body></html>`;
+<script>${NAV_JS}${COPY_JS}${HANDOFF_JS}</script></body></html>`;
 }
 
 function crumbs(parts: { label: string; href?: string }[]): string {
@@ -711,6 +715,8 @@ function crumbRow(parts: { label: string; href?: string }[], relPath: string): s
 
 function renderSection(s: Section, wiki?: WikiIndex): string {
   const label = s.heading === '' ? '' : `<div class="block-label">${esc(s.heading)}</div>`;
+  const unresolved = (row: Exclude<SectionRow, { kind: 'entry' }>) => row.kind === 'blank' ? ''
+    : `<li class="unresolved"><div class="banner">Line ${row.line}: malformed entry; expected ${esc(row.expected)}. Edit this source line; preserved verbatim.</div><pre>${esc(row.raw)}</pre></li>`;
   let body: string;
   switch (s.kind) {
     case 'prose':
@@ -725,8 +731,10 @@ function renderSection(s: Section, wiki?: WikiIndex): string {
     case 'checklist':
       body =
         `<ul class="checklist">` +
-        s.steps
-          .map((st) => {
+        orderedRows(s, s.steps)
+          .map((row) => {
+            if (row.kind !== 'entry') return unresolved(row);
+            const st = row.entry;
             const status = MARK_TO_STATUS[st.mark] ?? 'todo';
             const anchor = st.anchor ? ` id="^${esc(st.anchor)}"` : '';
             const blockers = st.continuations
@@ -746,8 +754,10 @@ function renderSection(s: Section, wiki?: WikiIndex): string {
     case 'links':
       body =
         `<ul class="link-rows">` +
-        s.entries
-          .map((e) => {
+        orderedRows(s, s.entries)
+          .map((row) => {
+            if (row.kind !== 'entry') return unresolved(row);
+            const e = row.entry;
             const ext = /^https?:\/\//.test(e.target);
             return `<li class="link-row"><span class="tag">${esc(e.kindLabel)}</span><a href="${targetHref(e.target)}"${ext ? ' target="_blank" rel="noopener"' : ''}>${esc(e.label)}</a></li>`;
           })
@@ -757,11 +767,10 @@ function renderSection(s: Section, wiki?: WikiIndex): string {
     case 'docs':
       body =
         `<ul class="link-rows">` +
-        s.entries
-          .map(
-            (e) =>
-              `<li class="link-row"><span class="tag">${esc(e.docKind)}</span><a href="${targetHref(e.relPath)}">${esc(e.title)}</a></li>`,
-          )
+        orderedRows(s, s.entries)
+          .map(row => row.kind !== 'entry' ? unresolved(row) :
+              `<li class="link-row"><span class="tag">${esc(row.entry.docKind)}</span><a href="${targetHref(row.entry.relPath)}">${esc(row.entry.title)}</a></li>`)
+
           .join('') +
         `</ul>`;
       break;
@@ -770,206 +779,210 @@ function renderSection(s: Section, wiki?: WikiIndex): string {
 }
 
 export function createArbiterServer(dataDir: string): http.Server {
-  const safeRead = (rel: string): string | null => {
-    const abs = path.resolve(dataDir, ...rel.split('/'));
-    if (!abs.startsWith(path.resolve(dataDir) + path.sep)) return null; // no traversal
-    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return null;
-    return fs.readFileSync(abs, 'utf8');
-  };
-
-  const factsNow = (): ItemFacts[] => extractFacts(dataDir, walkCorpus(dataDir), SchemaSet.load(dataDir));
-  const wikiNow = (): WikiIndex => buildWikiIndex(walkCorpus(dataDir));
-
-  const dashStamp = (): string => {
-    const text = safeRead('DASHBOARD.md');
-    if (text === null) return `<span>read-only scaffold · local only · files are truth</span>`;
-    const fm = parseDashboard(text).fm;
-    return `updated <b>${esc(fmGet(fm, 'updated') ?? '?')}</b> · protocol <b>${esc(fmGet(fm, 'protocol') ?? '?')}</b>`;
-  };
-
-  const renderDashboard = (facts: ItemFacts[]): string => {
-    const text = safeRead('DASHBOARD.md');
-    if (text === null) {
-      return page('Dashboard', '/', facts, `<h1>Dashboard</h1><div class="banner">No DASHBOARD.md — run <code>arbiter regen</code>.</div>`, dashStamp());
-    }
-    const dash = parseDashboard(text);
-    const epic = epicColors(facts);
-    const meta = dash.fm
-      ? `<div class="board-meta">
-           <span>updated <b>${esc(fmGet(dash.fm, 'updated') ?? '?')}</b></span>
-           <span>generated <b>${esc(fmGet(dash.fm, 'generated') ?? '?')}</b></span>
-           <span>protocol <b>${esc(fmGet(dash.fm, 'protocol') ?? '?')}</b></span>
-         </div>`
-      : '';
-    const cards = dash.cards
-      .map((c) => {
-        const dir = c.label.toLowerCase();
-        let overflowHtml = `<a class="card-more" href="/dir/${esc(dir)}">Open ${esc(dir)} →</a>`;
-        const rows = c.rows
-          .map((r) => {
-            if (r.kind === 'overflow') {
-              overflowHtml = `<a class="card-more" href="/dir/${esc(r.dir)}">+${r.count} more…</a>`;
-              return '';
-            }
-            if (r.kind === 'stray') return `<li class="card-item"><a href="#"><span class="tag">hand-added</span><span class="title">${prose(r.line)}</span></a></li>`;
-            const e = r.entry;
-            const staged = e.stagedCount ? `<span class="staged-chip">${e.stagedCount} staged</span>` : '';
-            const done = isTerminal(e.status) ? ' is-done' : '';
-            const eref = e.relPath.replace(/\.md$/, '');
-            return `<li class="card-item${done}${epic.cls(eref)}"${epic.style(eref)}><a href="${targetHref(e.relPath)}">${dot(e.status)}
-              <span class="title">${esc(e.title)}</span>${staged}<span class="when">${esc(e.date)}</span></a></li>`;
-          })
-          .join('');
-        return `<article class="card">
-          <a class="card-head" href="/dir/${esc(dir)}"><span class="card-title">${esc(c.label)}</span><span class="card-count">${c.count}</span></a>
-          <ul class="card-items">${rows || `<li class="empty">empty</li>`}</ul>${overflowHtml}</article>`;
-      })
-      .join('');
-    const body = `
-      <div class="board-head"><h1>Dashboard</h1>
-        <span class="sub">Tier 1 — read-only scaffold · local only · files are truth</span></div>
-      ${meta}
-      <div class="board">${cards}</div>
-      ${agentView('DASHBOARD.md', text)}`;
-    return page('Dashboard', '/', facts, body, dashStamp());
-  };
-
-  const renderItem = (facts: ItemFacts[], wiki: WikiIndex, dir: string, id: string): string | null => {
-    const rel = `${dir}/${id}.md`;
-    const text = safeRead(rel);
-    if (text === null) return null;
-    const ast = parseItemFile(text);
-    const title = fmGet(ast.fm, 'title') ?? ast.title ?? id;
-
-    const meta: string[] = [`<span class="kind">${esc(fmGet(ast.fm, 'type') ?? dir)}</span>`];
-    for (const key of ['started', 'eta', 'due', 'date', 'created', 'updated', 'archived'] as const) {
-      const v = fmGet(ast.fm, key);
-      if (v !== undefined) meta.push(`<span class="when">${key} ${esc(v)}</span>`);
-    }
-    for (const key of ['parent', 'prev', 'source', 'related'] as const) {
-      const v = fmGet(ast.fm, key);
-      if (v !== undefined)
-        meta.push(
-          `<span class="when">${key} ${v
-            .split(',')
-            .map((r) => `<a href="${targetHref(r.trim())}">${esc(r.trim())}</a>`)
-            .join(', ')}</span>`,
-        );
-    }
-    if (fmGet(ast.fm, 'visibility') === 'private') meta.push(`<span class="human-flag">private</span>`);
-    if (ast.fm === null) meta.push(`<span class="human-flag">raw human entry</span>`);
-
-    const rawNote =
-      ast.fm === null
-        ? `<p class="human-note">raw human entry — valid; normalization structures it on first touch (PROTOCOL.md#normalization)</p>`
-        : '';
-
-    // staged proposals are the most urgent thing on the page
-    let stagedHtml = '';
-    const staged = listStaged(dataDir, rel);
-    if (staged.length > 0) {
-      const rendered = staged
-        .map((name) => {
-          const ptext = safeRead(`${stagedDirFor(rel)}/${name}`);
-          if (ptext === null) return '';
-          const p = parseProposal(ptext);
-          const ops = p.ops.map((o) => `<li class="check todo"><span class="mark">·</span><span class="c-main"><code>${esc(o.raw)}</code></span></li>`).join('');
-          const body = proseBlocks(p.body, 'summary-text', wiki);
-          return `<section class="block"><div class="block-label">proposal · ${esc(name)}</div>
-            <div class="rows" style="padding:12px 16px">
-              <div class="rows-note" style="margin-top:0">by <b>${esc(fmGet(p.fm, 'author') ?? '?')}</b> · ${esc(fmGet(p.fm, 'updated') ?? '')}</div>
-              <ul class="checklist" style="border:none">${ops}</ul>
-              <div class="proposal-body">${body}</div>
-            </div></section>`;
-        })
-        .join('');
-      stagedHtml = `<div class="banner"><b>${staged.length} staged proposal(s) pending</b> — arbitrate before other work (<code>arbiter arbitrate ${esc(dir)}/${esc(id)}</code>)</div>${rendered}`;
-    }
-
-    // nested sub-items: derived from the children's parent refs, never stored
-    const nest = computeNesting(facts);
-    const epic = epicColors(facts);
-    const kids = nest.childrenOf(`${dir}/${id}`).filter((c) => c.dir === dir);
-    const subLabel = dir === 'tasks' ? 'Sub-tasks' : dir === 'goals' ? 'Sub-goals' : 'Sub-items';
-    const subHtml = kids.length
-      ? `<section class="block"><div class="block-label">${subLabel} · derived</div><ul class="subitems">${kids
-          .map(
-            (c) => `<li class="subitem${isTerminal(c.status) ? ' is-done' : ''}${epic.cls(c.ref)}"${epic.style(c.ref)}><a href="/item/${esc(c.dir)}/${esc(c.id)}">${dot(c.status)}
-              <span class="s-title">${esc(c.title)}</span>
-              ${c.stagedCount ? `<span class="staged-chip">${c.stagedCount} staged</span>` : ''}
-              <span class="s-sum">${plainInline(c.summaryFirst ?? '')}</span><span class="s-go">→</span></a></li>`,
-          )
-          .join('')}</ul></section>`
-      : '';
-
-    const body = `
-      ${crumbRow([{ label: 'Dashboard', href: '/' }, { label: dir, href: `/dir/${esc(dir)}` }, { label: id }], rel)}
-      <div class="view-head">${statusPill(fmGet(ast.fm, 'status'))}<h1>${esc(title)}</h1></div>
-      <div class="item-meta">${meta.join('')}</div>
-      ${rawNote}${stagedHtml}
-      ${ast.sections.map((sec) => renderSection(sec, wiki)).join('')}
-      ${subHtml}
-      ${agentView(rel, text)}`;
-    return page(title, `/item/${dir}/${id}`, facts, body, dashStamp());
-  };
-
-  const renderDoc = (facts: ItemFacts[], wiki: WikiIndex, dir: string, id: string, docId: string): string | null => {
-    const rel = `${dir}/${id}/${docId}.md`;
-    const text = safeRead(rel);
-    if (text === null) return null;
-    const ast = parseItemFile(text); // doc bodies render fine through the section renderer
-    const title = ast.title ?? docId;
-    const body = `
-      ${crumbRow(
-        [{ label: 'Dashboard', href: '/' }, { label: dir, href: `/dir/${esc(dir)}` }, { label: id, href: `/item/${esc(dir)}/${esc(id)}` }, { label: docId }],
-        rel,
-      )}
-      <div class="view-head"><span class="tag">${esc(fmGet(ast.fm, 'kind') ?? 'doc')}</span><h1>${esc(title)}</h1></div>
-      <div class="view-sub">Tier 3 — read-mostly; appends go under a dated heading</div>
-      <div class="doc-body">${ast.sections.map((sec) => renderSection(sec, wiki)).join('')}</div>
-      ${agentView(rel, text)}`;
-    return page(title, `/doc/${dir}/${id}/${docId}`, facts, body, dashStamp());
-  };
-
-  const renderDir = (facts: ItemFacts[], dir: string): string => {
-    const nest = computeNesting(facts);
-    const epic = epicColors(facts);
-    const byRef = new Map(facts.map((f) => [f.ref, f]));
-    const all = facts
-      .filter((f) => f.dir === dir)
-      .sort((a, b) => ((a.date ?? a.updatedDate ?? '') < (b.date ?? b.updatedDate ?? '') ? 1 : -1));
-    const active = all.filter((f) => !f.archived);
-    const archived = all.filter((f) => f.archived);
-    const row = (f: ItemFacts) => `
-      <a class="row${f.status ? '' : ' no-status'}${epic.cls(f.ref)}"${epic.style(f.ref)} href="/item/${esc(f.dir)}/${esc(f.id)}">
-        ${f.status ? statusPill(f.status) : ''}
-        <span class="r-main"><span class="r-title">${esc(f.title)}</span>
-          ${nest.isSub(f.ref) ? `<span class="sub-hint">↳ ${esc(byRef.get(f.parent!)?.title ?? f.parent!)}</span>` : ''}
-          ${f.stagedCount ? `<span class="staged-chip">${f.stagedCount} staged</span>` : ''}
-          ${f.archived ? `<span class="archived-flag">archived ${esc(f.archived)}</span>` : ''}</span>
-        <span class="r-when">${esc(f.date ?? f.updatedDate ?? '')}</span></a>`;
-    const body = `
-      ${crumbs([{ label: 'Dashboard', href: '/' }, { label: dir }])}
-      <div class="view-head"><h1>${esc(CARD_LABELS[dir] ?? dir)}</h1><span class="card-count">${active.length}</span></div>
-      <div class="view-sub">Tier 2 — recency view; archived objects are flagged below, reports still read them</div>
-      <div class="rows">${active.map(row).join('') || `<div class="empty">empty</div>`}</div>
-      ${
-        archived.length
-          ? `<div class="rows-note">archived (a flag, never a move)</div><div class="rows">${archived.map(row).join('')}</div>`
-          : ''
-      }`;
-    return page(dir, `/dir/${dir}`, facts, body, dashStamp());
-  };
-
+  const handoffs = handoffApi(dataDir);
   return http.createServer((req, res) => {
+    if (req.url === '/api/handoff') { void handoffs.handle(req, res); return; }
+    if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
     const send = (code: number, body: string, type = 'text/html; charset=utf-8') => {
       res.writeHead(code, { 'content-type': type, 'cache-control': 'no-store' });
       res.end(body);
     };
     try {
+      const snapshot = readProjection(dataDir);
+      const facts = snapshot.facts;
+      const byPath = new Map(snapshot.files.map(f => [f.relPath, f.text]));
+      const sourceLines = new Map(snapshot.files.map(f => [f.relPath, f.sourceLines]));
+      const safeRead = (rel: string): string | null => byPath.get(rel) ?? null;
+      const protocol = fmGet(parseItemFile(safeRead('PROTOCOL.md') ?? '').fm, 'version') ?? '?';
+      const now = new Date().toISOString().slice(0, 16);
+      const stored = safeRead('DASHBOARD.md');
+      const dashboard = regenFull(facts, stored, { now, protocolRaw: `"${protocol}"`, inputs: snapshot.inputs });
+      // Raw and agent views use the very same visible projection as the human card.
+      byPath.set('DASHBOARD.md', dashboard);
+      const wikiNow = (): WikiIndex => buildWikiIndex(snapshot.files);
+      const targetDiagnostics = (rel: string): string => validateCorpus(dataDir, snapshot.files, SchemaSet.fromFiles(snapshot.files), { verifyHistory: false }).errors
+        .filter(d => d.relPath === rel && d.code === 'broken-target')
+        .map(d => `<div class="banner">${d.line ? `Line ${d.line}: ` : ''}broken target: ${esc(d.message)}. Correct the path or anchor in the source file.</div>`).join('');
+      const dashStamp = (): string => `files verified <b>${esc(now)}</b> · protocol <b>${esc(protocol)}</b>`;
+
+      const renderDashboard = (facts: ItemFacts[]): string => {
+        const text = safeRead('DASHBOARD.md');
+        if (text === null) {
+          return page('Dashboard', '/', facts, `<h1>Dashboard</h1><div class="banner">No DASHBOARD.md — run <code>arbiter regen</code>.</div>`, dashStamp());
+        }
+        const dash = parseDashboard(text);
+        const epic = epicColors(facts);
+        const meta = dash.fm
+          ? `<div class="board-meta">
+               <span>inputs <b>${esc(snapshot.inputs)}</b></span>
+               <span>updated <b>${esc(fmGet(dash.fm, 'updated') ?? '?')}</b></span>
+               <span>generated <b>${esc(fmGet(dash.fm, 'generated') ?? '?')}</b></span>
+               <span>protocol <b>${esc(fmGet(dash.fm, 'protocol') ?? '?')}</b></span>
+             </div>`
+          : '';
+        const cards = dash.cards
+          .map((c) => {
+            const dir = c.label.toLowerCase();
+            let overflowHtml = `<a class="card-more" href="/dir/${esc(dir)}">Open ${esc(dir)} →</a>`;
+            const rows = c.rows
+              .map((r) => {
+                if (r.kind === 'overflow') {
+                  overflowHtml = `<a class="card-more" href="/dir/${esc(r.dir)}">+${r.count} more…</a>`;
+                  return '';
+                }
+                if (r.kind === 'stray') return `<li class="card-item"><a href="#"><span class="tag">hand-added</span><span class="title">${prose(r.line)}</span></a></li>`;
+                const e = r.entry;
+                const staged = e.stagedCount ? `<span class="staged-chip">${e.stagedCount} staged</span>` : '';
+                const done = isTerminal(e.status) ? ' is-done' : '';
+                const eref = e.relPath.replace(/\.md$/, '');
+                return `<li class="card-item${done}${epic.cls(eref)}"${epic.style(eref)}><a href="${targetHref(e.relPath)}">${dot(e.status)}
+                  <span class="title">${esc(e.title)}</span>${staged}${e.review ? `<span class="pill needs-review">review: ${esc(e.review)}</span>` : ''}<span class="when">${esc(e.date)}</span></a></li>`;
+              })
+              .join('');
+            return `<article class="card">
+              <a class="card-head" href="/dir/${esc(dir)}"><span class="card-title">${esc(c.label)}</span><span class="card-count">${c.count}</span></a>
+              <ul class="card-items">${rows || `<li class="empty">empty</li>`}</ul>${overflowHtml}</article>`;
+          })
+          .join('');
+        const body = `
+          <div class="board-head"><h1>Dashboard</h1>
+            <span class="sub">Dashboard · local only · files are truth</span></div>
+          ${meta}
+          <div class="board">${cards}</div>
+          ${agentView('DASHBOARD.md', text)}`;
+        return page('Dashboard', '/', facts, body, dashStamp());
+      };
+
+      const renderItem = (facts: ItemFacts[], wiki: WikiIndex, dir: string, id: string): string | null => {
+        const rel = `${dir}/${id}.md`;
+        const text = safeRead(rel);
+        if (text === null) return null;
+        const ast = parseItemFile(text, sourceLines.get(rel));
+        const title = fmGet(ast.fm, 'title') ?? ast.title ?? id;
+
+        const meta: string[] = [`<span class="kind">${esc(fmGet(ast.fm, 'type') ?? dir)}</span>`];
+        for (const key of ['started', 'eta', 'due', 'date', 'created', 'updated', 'archived', 'review', 'owner'] as const) {
+          const v = fmGet(ast.fm, key);
+          if (v !== undefined) meta.push(`<span class="when">${key} ${esc(v)}</span>`);
+        }
+        for (const key of ['parent', 'prev', 'source', 'related'] as const) {
+          const v = fmGet(ast.fm, key);
+          if (v !== undefined)
+            meta.push(
+              `<span class="when">${key} ${v
+                .split(',')
+                .map((r) => `<a href="${targetHref(r.trim())}">${esc(r.trim())}</a>`)
+                .join(', ')}</span>`,
+            );
+        }
+        if (fmGet(ast.fm, 'visibility') === 'private') meta.push(`<span class="human-flag">private</span>`);
+        if (ast.fm === null) meta.push(`<span class="human-flag">raw human entry</span>`);
+
+        const rawNote =
+          ast.fm === null
+            ? `<p class="human-note">raw human entry — valid; normalization structures it on first touch (PROTOCOL.md#normalization)</p>`
+            : '';
+
+        // staged proposals are the most urgent thing on the page
+        let stagedHtml = '';
+        const staged = snapshot.files.filter(f => f.kind === 'proposal' && f.relPath.startsWith(`${stagedDirFor(rel)}/`)).map(f => f.relPath.split('/').at(-1)!);
+        if (staged.length > 0) {
+          const rendered = staged
+            .map((name) => {
+              const ptext = safeRead(`${stagedDirFor(rel)}/${name}`);
+              if (ptext === null) return '';
+              const p = parseProposal(ptext);
+              const ops = p.ops.map((o) => `<li class="check todo"><span class="mark">·</span><span class="c-main"><code>${esc(o.raw)}</code></span></li>`).join('');
+              const body = proseBlocks(p.body, 'summary-text', wiki);
+              return `<section class="block"><div class="block-label">proposal · ${esc(name)}</div>
+                <div class="rows" style="padding:12px 16px">
+                  <div class="rows-note" style="margin-top:0">by <b>${esc(fmGet(p.fm, 'author') ?? '?')}</b> · ${esc(fmGet(p.fm, 'updated') ?? '')}</div>
+                  <ul class="checklist" style="border:none">${ops}</ul>
+                  <div class="proposal-body">${body}</div>
+                </div></section>`;
+            })
+            .join('');
+          stagedHtml = `<div class="banner"><b>${staged.length} staged proposal(s) pending</b> — arbitrate before other work (<code>arbiter arbitrate ${esc(dir)}/${esc(id)}</code>)</div>${rendered}`;
+        }
+
+        // nested sub-items: derived from the children's parent refs, never stored
+        const nest = computeNesting(facts);
+        const epic = epicColors(facts);
+        const kids = nest.childrenOf(`${dir}/${id}`).filter((c) => c.dir === dir);
+        const subLabel = dir === 'tasks' ? 'Sub-tasks' : dir === 'goals' ? 'Sub-goals' : 'Sub-items';
+        const subHtml = kids.length
+          ? `<section class="block"><div class="block-label">${subLabel} · derived</div><ul class="subitems">${kids
+              .map(
+                (c) => `<li class="subitem${isTerminal(c.status) ? ' is-done' : ''}${epic.cls(c.ref)}"${epic.style(c.ref)}><a href="/item/${esc(c.dir)}/${esc(c.id)}">${dot(c.status)}
+                  <span class="s-title">${esc(c.title)}</span>
+                  ${c.stagedCount ? `<span class="staged-chip">${c.stagedCount} staged</span>` : ''}
+                  <span class="s-sum">${plainInline(c.summaryFirst ?? '')}</span><span class="s-go">→</span></a></li>`,
+              )
+              .join('')}</ul></section>`
+          : '';
+
+        const body = `
+          ${crumbRow([{ label: 'Dashboard', href: '/' }, { label: dir, href: `/dir/${esc(dir)}` }, { label: id }], rel)}
+          <div class="view-head">${statusPill(fmGet(ast.fm, 'status'))}${facts.find(f => f.relPath === rel)?.review ? `<span class="pill needs-review">review: ${esc(facts.find(f => f.relPath === rel)!.review!)}</span>` : ''}<h1>${esc(title)}</h1></div>
+          <div class="item-meta">${meta.join('')}</div>
+          ${rawNote}${stagedHtml}${targetDiagnostics(rel)}
+          ${dir === 'tasks' && ['0.4.11', '0.4.12'].includes(protocol) ? handoffPanel(`${dir}/${id}`, fmGet(ast.fm, 'owner') ?? 'unassigned', handoffs.token, esc) : ''}
+          ${ast.sections.map((sec) => renderSection(sec, wiki)).join('')}
+          ${subHtml}
+          ${agentView(rel, text)}`;
+        return page(title, `/item/${dir}/${id}`, facts, body, dashStamp());
+      };
+
+      const renderDoc = (facts: ItemFacts[], wiki: WikiIndex, dir: string, id: string, docId: string): string | null => {
+        const rel = `${dir}/${id}/${docId}.md`;
+        const text = safeRead(rel);
+        if (text === null) return null;
+        const ast = parseItemFile(text, sourceLines.get(rel)); // doc bodies render fine through the section renderer
+        const title = ast.title ?? docId;
+        const body = `
+          ${crumbRow(
+            [{ label: 'Dashboard', href: '/' }, { label: dir, href: `/dir/${esc(dir)}` }, { label: id, href: `/item/${esc(dir)}/${esc(id)}` }, { label: docId }],
+            rel,
+          )}
+          <div class="view-head"><span class="tag">${esc(fmGet(ast.fm, 'kind') ?? 'doc')}</span><h1>${esc(title)}</h1></div>
+          <div class="view-sub">Tier 3 — read-mostly; appends go under a dated heading</div>
+          <div class="doc-body">${ast.sections.map((sec) => renderSection(sec, wiki)).join('')}</div>
+          ${agentView(rel, text)}`;
+        return page(title, `/doc/${dir}/${id}/${docId}`, facts, body, dashStamp());
+      };
+
+      const renderDir = (facts: ItemFacts[], dir: string): string => {
+        const nest = computeNesting(facts);
+        const epic = epicColors(facts);
+        const byRef = new Map(facts.map((f) => [f.ref, f]));
+        const all = facts
+          .filter((f) => f.dir === dir)
+          .sort((a, b) => ((a.date ?? a.updatedDate ?? '') < (b.date ?? b.updatedDate ?? '') ? 1 : -1));
+        const active = all.filter((f) => !f.archived);
+        const archived = all.filter((f) => f.archived);
+        const row = (f: ItemFacts) => `
+          <a class="row${f.status ? '' : ' no-status'}${epic.cls(f.ref)}"${epic.style(f.ref)} href="/item/${esc(f.dir)}/${esc(f.id)}">
+            ${f.status ? statusPill(f.status) : ''}${f.review ? `<span class="pill needs-review">review: ${esc(f.review)}</span>` : ''}
+            <span class="r-main"><span class="r-title">${esc(f.title)}</span>
+              ${nest.isSub(f.ref) ? `<span class="sub-hint">↳ ${esc(byRef.get(f.parent!)?.title ?? f.parent!)}</span>` : ''}
+              ${f.stagedCount ? `<span class="staged-chip">${f.stagedCount} staged</span>` : ''}
+              ${f.archived ? `<span class="archived-flag">archived ${esc(f.archived)}</span>` : ''}</span>
+            <span class="r-when">${esc(f.date ?? f.updatedDate ?? '')}</span></a>`;
+        const body = `
+          ${crumbs([{ label: 'Dashboard', href: '/' }, { label: dir }])}
+          <div class="view-head"><h1>${esc(CARD_LABELS[dir] ?? dir)}</h1><span class="card-count">${active.length}</span></div>
+          <div class="view-sub">Tier 2 — recency view; archived objects are flagged below, reports still read them</div>
+          <div class="rows">${active.map(row).join('') || `<div class="empty">empty</div>`}</div>
+          ${
+            archived.length
+              ? `<div class="rows-note">archived (a flag, never a move)</div><div class="rows">${archived.map(row).join('')}</div>`
+              : ''
+          }`;
+        return page(dir, `/dir/${dir}`, facts, body, dashStamp());
+      };
+
       const url = new URL(req.url ?? '/', 'http://localhost');
       const seg = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
-      const facts = factsNow();
       if (seg.length === 0) return send(200, renderDashboard(facts));
       if (seg[0] === 'protocol') {
         const t = safeRead('PROTOCOL.md');
@@ -998,7 +1011,7 @@ export function createArbiterServer(dataDir: string): http.Server {
       }
       return send(404, page('404', url.pathname, facts, '<h1>404</h1><p><a href="/">back to the dashboard</a></p>', dashStamp()));
     } catch (err) {
-      return send(500, `<pre>${esc(String(err))}</pre>`);
+      return send(500, 'Unable to read the current projection.', 'text/plain');
     }
   });
 }

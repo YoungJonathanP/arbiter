@@ -1,5 +1,14 @@
 # Handoff — working on Arbiter from another machine
 
+For the next implementation assignment, start with
+[`docs/handoffs/next-task.md`](docs/handoffs/next-task.md), the current chaining
+handoff. The completing agent prepares its successor at that same path.
+[`docs/improvement-plan.md`](docs/improvement-plan.md) is the execution index. Each linked task packet
+contains its start gate, required inputs, acceptance checklist and current handoff.
+The [checkpoint contract](docs/v0.4.11-checkpoints.md) is implemented at the
+file-role/validation/write-lifecycle layer. [Capture/export CLI and task UI](docs/v0.4.12-handoff-tooling.md)
+now share exact-byte previews and stale-input checks.
+
 Written 2026-09-06. Everything needed to clone this repo on a fresh machine and
 work on the tool. Read `CLAUDE.md` next for the dogfooding rules and the
 three-directory hazard.
@@ -24,7 +33,7 @@ and shows only 1 open item. Do not read it as current.
 git clone https://github.com/YoungJonathanP/arbiter.git
 cd arbiter
 npm ci          # see the JFrog note below if you are on a corporate network
-npm test        # expected: 29/29 pass, typecheck clean
+npm test        # T01: 36/36 pass, typecheck clean; localhost access needed
 ```
 
 Node 22 or newer is required (`engines`). Verified on v22.22.3.
@@ -53,25 +62,25 @@ This binding is temporary trial scaffolding. The v1.0 install story replaces it.
 
 ### Bootstrap a data directory
 
-`dev-bind.sh` does **not** create `../arbiter-data`, and there is no `arbiter
-init`. On a fresh machine that directory will not exist, and the CLI will not tell
-you — a missing data directory validates green and exits 0 (backlog item 17).
-
-To get a working KB for development:
+`dev-bind.sh` does **not** create `../arbiter-data`. Bootstrap explicitly:
 
 ```sh
-mkdir -p ../arbiter-data
-cp -R arbiter-data/PROTOCOL.md arbiter-data/types ../arbiter-data/
-arbiter regen                   # writes DASHBOARD.md
-arbiter validate                # confirm it found files, not zero
+npm run --silent arbiter -- init --data ../arbiter-data
+npm run --silent arbiter -- doctor --data ../arbiter-data
+npm run --silent arbiter -- validate --data ../arbiter-data
 ```
 
-**Check the file count.** `0 files, 0 error(s)` means the CLI found nothing, not
-that everything is clean.
+`init` accepts a missing or completely empty directory. It installs only the
+bundled protocol and schemas, creates empty item directories and a dashboard,
+and validates the result. It never overwrites a KB or changes shell profiles.
+`doctor` checks supported protocol/schema identities and corpus health.
+Selection diagnostics include the absolute KB path and source on stderr.
+A missing path fails; an empty bootstrap directory is explicitly reported as
+not initialized. See [T01 CLI decisions](docs/t01-cli-decisions.md).
 
-For a richer dataset to exercise the renderer, the frozen `arbiter-data/` corpus is
-27 files of Arbiter-only content and is a fine copy source. Copy it out; never
-write to it in place, because CI validates it as a conformance target.
+For renderer development, copy the frozen corpus to a temporary location and
+pass that path with `--data`. The bundled corpora reject CLI writes, including
+through symlink aliases. Read-only validation and dry runs remain supported.
 
 ### Skills
 
@@ -95,7 +104,15 @@ multiple `gh` accounts configured, switch before a push:
 gh auth switch --user YoungJonathanP
 ```
 
-## Current state, 2026-09-06
+## Verified T01 state, 2026-09-06
+
+T01 is implemented in the uncommitted worktree based on `4a5e097` on `main`.
+All 36 tests pass, the build passes, and both bundled corpora validate with zero
+errors. The live sibling KB is absent; the shell selects the frozen in-repo
+corpus. Live capture remains unavailable. Continue at the current chaining
+handoff; [T01 completion](docs/handoffs/completed/t01.md) records the evidence.
+
+## Historical pre-handoff state (not current live verification)
 
 | | |
 |---|---|
@@ -125,7 +142,7 @@ and there has been far more than a week of real use.
   temp-binding sections from `README.md`, `CLAUDE.md`, and the arbiter skill, and
   remove the provisional `arbiter-trial-feedback` skill and its symlink.
 
-## Suggested order of attack
+## Historical suggested order (the execution index now governs)
 
 1. **The arbitration and CAS package** — backlog items 1-4. Three separate
    correctness bugs sit on the path that carries the protocol's "silent loss is
@@ -138,7 +155,7 @@ and there has been far more than a week of real use.
 4. **Validator lints and structure** — items 8 through 13. Several are coupled:
    8 and 12 land together, and 11 constrains how 8 is implemented.
 
-Item 7 (`--help`) is a one-liner and good for a first commit on a new machine.
+T01 now resolves items 1, 6, 7 and 17, including explicit init/doctor support.
 
 ## Conventions worth knowing before the first commit
 

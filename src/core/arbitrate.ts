@@ -3,10 +3,13 @@
 // concurrent arbiters compute byte-identical results (gate 7), and every op
 // ends applied, overruled-on-the-record, or still staged (gate 6).
 
+import { sectionDiagnostics, withoutSource } from './section-rows.js';
 import type { ItemFile, Op, ProposalFile, Section, Step } from './model.js';
-import { TERMINAL_STATUSES, KNOWN_SECTIONS } from './model.js';
+import { TERMINAL_STATUSES, KNOWN_SECTIONS, STATUSES, TYPE_TO_DIR } from './model.js';
 import { fmGet, fmGetRaw, fmSet, fmSetRaw } from './fm.js';
 import { parseItemFile, parseProposal, RESOLUTION_RE } from './parse.js';
+import type { ResolvedSchema } from './schema.js';
+import { sha256 } from './corpus.js';
 import { serializeItem } from './serialize.js';
 
 export interface ProposalInput {
@@ -18,11 +21,22 @@ export interface ArbitrationResult {
   /** 'noop' = nothing staged; 'clean' = all proposals arbitrated; 'partial' = some stay staged */
   outcome: 'noop' | 'clean' | 'partial';
   itemText: string;
-  /** proposal filenames to delete (their intent now lives in the item) */
+  /** Eligible for cleanup only after commit verification and durable receipts. */
   deleted: string[];
-  /** proposal filenames that stay staged (item is flagged needs-review) */
+  /** proposal filenames that stay staged for review (terminal status is preserved) */
   remaining: string[];
   flags: string[];
+  receipts: ProposalReceipt[];
+}
+
+export interface ProposalReceipt {
+  id: string;
+  digest: string;
+  filename: string;
+  /** Original durable commit; replay receipts refer back to this snapshot. */
+  committedIn?: string;
+  replayed?: boolean;
+  ops: { raw: string; verdict: 'applied' | 'overruled'; reason: string }[];
 }
 
 interface Prop {
@@ -33,7 +47,7 @@ interface Prop {
   updatedRaw: string;
   decidable: boolean;
   reasons: string[];
-  verdicts: ('applied' | 'overruled')[]; // parallel to ast.ops
+  verdicts: ('pending' | 'applied' | 'overruled')[]; // parallel to ast.ops
 }
 
 const MARK_ORDER: Record<string, number> = { todo: 0, 'in-flight': 1, done: 2 };
@@ -63,9 +77,50 @@ function maxDatetime(values: { cmp: string; raw: string }[]): { cmp: string; raw
   return values.reduce((a, b) => (b.cmp > a.cmp ? b : a));
 }
 
-export function arbitrate(itemText: string, proposals: ProposalInput[]): ArbitrationResult {
+/** Parse an append through the same grammar used to read the eventual file. */
+function appendSection(op: Op & { kind: 'append' }): Section | undefined {
+  if (!op.text.trim() || /[\r\n]/.test(op.text)) return;
+  const line = op.section === 'Summary' ? op.text : op.section === 'Checklist' ? `- [ ] ${op.text}` : `- ${op.text}`;
+  const sections = parseItemFile(`# Append\n\n## ${op.section}\n${line}\n`).sections;
+  const section = sections[0];
+  if (sections.length !== 1 || !section || section.kind === 'malformed' || sectionDiagnostics(section).length > 0) return;
+  if (section.kind === 'checklist' && (section.steps.length !== 1 || section.steps[0]!.text !== op.text)) return;
+  if (section.kind === 'prose' && (section.lines.length !== 1 || section.lines[0] !== op.text)) return;
+  return section;
+}
+
+export function opSatisfied(item: ItemFile, op: Op): boolean {
+  if (op.kind === 'set') return fmGet(item.fm, op.key) === op.value;
+  if (op.kind === 'mark') return findStep(item, op)?.mark === MARK_TO_CHAR[op.mark];
+  const expected = appendSection(op);
+  const actual = item.sections.find(s => s.heading === op.section);
+  if (!expected || !actual || expected.kind !== actual.kind) return false;
+  if (expected.kind === 'prose' && actual.kind === 'prose') return actual.lines.includes(op.text);
+  if (expected.kind === 'checklist' && actual.kind === 'checklist') return actual.steps.some(s => s.text === op.text);
+  if (expected.kind === 'links' && actual.kind === 'links') return expected.entries.every(e => actual.entries.some(a => JSON.stringify(withoutSource(a)) === JSON.stringify(withoutSource(e))));
+  if (expected.kind === 'docs' && actual.kind === 'docs') return expected.entries.every(e => actual.entries.some(a => JSON.stringify(withoutSource(a)) === JSON.stringify(withoutSource(e))));
+  return false;
+}
+
+export function proposalProblems(ast: ProposalFile, filename: string, item: ItemFile): string[] {
+  const errors: string[] = [];
+  const id = fmGet(item.fm, 'id');
+  const ref = `${TYPE_TO_DIR[fmGet(item.fm, 'type') ?? '']}/${id}`;
+  if (!ast.fm || !item.fm) errors.push('missing frontmatter');
+  if (fmGet(ast.fm, 'id') !== filename.replace(/\.md$/, '') || !/^[a-z0-9][a-z0-9-]*\.md$/.test(filename)) errors.push('proposal ID must match filename');
+  if (![id, ref].includes(fmGet(ast.fm, 'item'))) errors.push('proposal targets a different item');
+  if (!/^sha256:[a-f0-9]{64}$/.test(fmGet(ast.fm, 'base') ?? '')) errors.push('invalid base digest');
+  if (!fmGet(ast.fm, 'author') || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(fmGet(ast.fm, 'updated') ?? '') || !Number.isFinite(Date.parse(fmGet(ast.fm, 'updated') ?? ''))) errors.push('missing author or invalid updated');
+  if (!ast.body.some(line => line.trim()) || ast.ops.length === 0) errors.push('intent body and ops required');
+  if (ast.ops.some(op => op.kind === 'set' && op.key === '')) errors.push('unparseable op');
+  if (ast.pointer && ast.pointer.scope !== 'staged') errors.push('invalid pointer scope');
+  if (ast.ops.some(op => /[`\r\n]/.test(op.raw))) errors.push('op contains a backtick or newline');
+  return errors;
+}
+
+export function arbitrate(itemText: string, proposals: ProposalInput[], schema?: ResolvedSchema): ArbitrationResult {
   if (proposals.length === 0) {
-    return { outcome: 'noop', itemText, deleted: [], remaining: [], flags: [] };
+    return { outcome: 'noop', itemText, deleted: [], remaining: [], flags: [], receipts: [] };
   }
 
   // bytewise filename order — input order must not matter (gate 7)
@@ -76,15 +131,16 @@ export function arbitrate(itemText: string, proposals: ProposalInput[]): Arbitra
 
   const props: Prop[] = sorted.map((p) => {
     const ast = parseProposal(p.text);
+    const reasons = proposalProblems(ast, p.filename, item);
     return {
       filename: p.filename,
       stem: p.filename.replace(/\.md$/, ''),
       ast,
       updated: fmGet(ast.fm, 'updated') ?? '',
       updatedRaw: fmGetRaw(ast.fm, 'updated') ?? fmGet(ast.fm, 'updated') ?? '',
-      decidable: true,
-      reasons: [],
-      verdicts: ast.ops.map(() => 'applied' as const),
+      decidable: reasons.length === 0,
+      reasons,
+      verdicts: ast.ops.map(() => 'pending' as const),
     };
   });
 
@@ -92,6 +148,9 @@ export function arbitrate(itemText: string, proposals: ProposalInput[]): Arbitra
   const setValues = new Map<string, Set<string>>(); // non-status key -> distinct values proposed
   for (const p of props) {
     for (const op of p.ast.ops) {
+      if (op.kind === 'set' && (['id', 'type', 'created', 'updated'].includes(op.key) || (op.key === 'status' && !STATUSES.has(op.value)) || (schema && !schema.fields.has(op.key)))) {
+        p.decidable = false; p.reasons.push('unsupported or protected set field/value');
+      }
       if (op.kind === 'set' && op.key === '') {
         p.decidable = false;
         p.reasons.push(`unparseable op \`${op.raw}\``);
@@ -101,7 +160,8 @@ export function arbitrate(itemText: string, proposals: ProposalInput[]): Arbitra
         setValues.set(op.key, s);
       } else if (op.kind === 'mark') {
         const step = findStep(item, op);
-        if (!step) {
+        const matches = item.sections.flatMap(s => s.kind === 'checklist' ? s.steps : []).filter(s => op.anchor !== undefined ? s.anchor === op.anchor : s.text === op.stepText);
+        if (!step || matches.length !== 1) {
           p.decidable = false;
           p.reasons.push(`mark op addresses missing step ${stepKey(op)}`);
         } else if (op.mark === 'blocked' && p.ast.bodyLinks.length === 0) {
@@ -109,9 +169,9 @@ export function arbitrate(itemText: string, proposals: ProposalInput[]): Arbitra
           p.reasons.push('mark-op sets blocked but the body cites no blocker link');
         }
       } else if (op.kind === 'append') {
-        if (!(KNOWN_SECTIONS as readonly string[]).includes(op.section)) {
+        if (!(KNOWN_SECTIONS as readonly string[]).includes(op.section) || (schema && !schema.sections.has(op.section)) || !appendSection(op) || item.sections.filter(s => s.heading === op.section).length > 1 || item.sections.some(s => s.heading === op.section && s.kind === 'malformed')) {
           p.decidable = false;
-          p.reasons.push(`append targets unknown section "${op.section}"`);
+          p.reasons.push(`append targets unsupported/malformed section or entry "${op.section}"`);
         }
       }
       // terminal reversal: never auto-resolved
@@ -161,11 +221,11 @@ export function arbitrate(itemText: string, proposals: ProposalInput[]): Arbitra
   }
 
   if (decidable.length === 0) {
-    if (item.fm && itemStatus !== 'needs-review') {
-      fmSet(item.fm, 'status', 'needs-review');
-      return { outcome: 'partial', itemText: serializeItem(item), deleted: [], remaining: remaining.map((p) => p.filename), flags };
+    if (item.fm && fmGet(item.fm, 'review') === undefined) {
+      fmSet(item.fm, 'review', itemStatus === 'needs-review' ? 'legacy-unknown' : 'needed');
+      return { outcome: 'partial', itemText: serializeItem(item), deleted: [], remaining: remaining.map((p) => p.filename), flags, receipts: [] };
     }
-    return { outcome: 'partial', itemText, deleted: [], remaining: remaining.map((p) => p.filename), flags };
+    return { outcome: 'partial', itemText, deleted: [], remaining: remaining.map((p) => p.filename), flags, receipts: [] };
   }
 
   // --- merge mark ops per step (lattice; evidenced blocked wins) ---------------
@@ -226,33 +286,15 @@ export function arbitrate(itemText: string, proposals: ProposalInput[]): Arbitra
   for (const p of decidable) {
     p.ast.ops.forEach((op) => {
       if (op.kind !== 'append') return;
-      let section = item.sections.find((s) => s.heading === op.section);
-      if (!section) {
-        section =
-          op.section === 'Checklist'
-            ? { kind: 'checklist', heading: 'Checklist', steps: [] }
-            : op.section === 'Artifacts' || op.section === 'Evidence'
-              ? { kind: 'links', heading: op.section, entries: [] }
-              : { kind: 'prose', heading: op.section, lines: [] };
-        item.sections.push(section);
-      }
-      if (section.kind === 'checklist') {
-        if (!section.steps.some((s) => s.text === op.text)) {
-          section.steps.push({ mark: ' ', text: op.text, continuations: [] });
-        }
-      } else if (section.kind === 'links') {
-        const m = /^([^:]+): \[([^\]]*)\]\(([^)]+)\)$/.exec(op.text);
-        if (m) {
-          if (!section.entries.some((e) => e.kindLabel === m[1]! && e.label === m[2]! && e.target === m[3]!)) {
-            section.entries.push({ kindLabel: m[1]!, label: m[2]!, target: m[3]! });
-          }
-        } else {
-          flags.push(`${p.filename}: append to ${op.section} is not a link entry; appended as written`);
-          section.entries.push({ kindLabel: 'note', label: op.text, target: '' });
-        }
-      } else if (section.kind === 'prose') {
-        if (!section.lines.includes(op.text)) section.lines.push(op.text);
-      }
+      const addition = appendSection(op)!;
+      let section = item.sections.find(s => s.heading === op.section);
+      if (!section) { item.sections.push(addition); return; }
+      if (opSatisfied(item, op)) return;
+      if (section.kind === 'checklist' && addition.kind === 'checklist') section.steps.push(...addition.steps);
+      else if (section.kind === 'links' && addition.kind === 'links') section.entries.push(...addition.entries);
+      else if (section.kind === 'docs' && addition.kind === 'docs') section.entries.push(...addition.entries);
+      else if (section.kind === 'prose' && addition.kind === 'prose') section.lines.push(...addition.lines);
+
     });
   }
 
@@ -280,14 +322,14 @@ export function arbitrate(itemText: string, proposals: ProposalInput[]): Arbitra
             : !anyBlocked && !allDone;
     if (!consistent) so.prop.verdicts[so.opIndex] = 'overruled';
   }
-  const appliedStatuses = [...new Set(statusOps.filter((s) => s.prop.verdicts[s.opIndex] === 'applied').map((s) => s.value))];
+  const appliedStatuses = [...new Set(statusOps.filter((s) => s.prop.verdicts[s.opIndex] !== 'overruled').map((s) => s.value))];
   if (appliedStatuses.includes('dropped')) status = 'dropped';
   else if (anyBlocked) status = 'blocked';
   else if (allDone && appliedStatuses.includes('done')) status = 'done';
   else if (appliedStatuses.length === 1) status = appliedStatuses[0]!;
   else if (status === 'blocked' && !anyBlocked) status = 'in-flight';
 
-  if (remaining.length > 0) status = 'needs-review';
+  if (remaining.length > 0 && item.fm && fmGet(item.fm, 'review') === undefined) fmSet(item.fm, 'review', itemStatus === 'needs-review' ? 'legacy-unknown' : 'needed');
   if (item.fm && fmGet(item.fm, 'status') !== undefined) fmSet(item.fm, 'status', status);
 
   // --- updated: max across item and arbitrated proposals (never wall clock) -------
@@ -297,11 +339,31 @@ export function arbitrate(itemText: string, proposals: ProposalInput[]): Arbitra
   if (item.fm && newUpdated.raw !== '') fmSetRaw(item.fm, 'updated', newUpdated.raw);
   const resolutionDate = (fmGet(item.fm, 'updated') ?? '').slice(0, 10);
 
-  // --- resolution lines at the end of ## Summary -----------------------------------
-  let summary = item.sections.find((s): s is Section & { kind: 'prose' } => s.heading === 'Summary' && s.kind === 'prose');
+  // Verify the serialized target structure before assigning any applied verdict.
+  const parsed = parseItemFile(serializeItem(item));
+  const failed: Prop[] = [];
+  for (const p of decidable) {
+    p.ast.ops.forEach((op, i) => {
+      if (p.verdicts[i] === 'overruled') return;
+      if (opSatisfied(parsed, op)) p.verdicts[i] = 'applied';
+      else if (op.kind === 'set' && op.key === 'status') p.verdicts[i] = 'overruled';
+      else if (!failed.includes(p)) failed.push(p);
+    });
+  }
+  if (failed.length) {
+    // Conservatively retain the batch; no partial effects from a failed plan.
+    return { outcome: 'partial', itemText, deleted: [], receipts: [],
+      remaining: sorted.map(p => p.filename),
+      flags: [...flags, ...failed.map(p => `${p.filename} stays staged: parsed postcondition failed; batch retained`)],
+    };
+  }
+
+  // History is separate from the current continuation Summary (contract 0.4.8).
+  // Preserve legacy Summary receipts and historical prose in place.
+  let summary = item.sections.find((s): s is Section & { kind: 'prose' } => s.heading === 'Arbitration history' && s.kind === 'prose');
   if (!summary) {
-    summary = { kind: 'prose', heading: 'Summary', lines: [] };
-    item.sections.unshift(summary);
+    summary = { kind: 'prose', heading: 'Arbitration history', lines: [] };
+    item.sections.push(summary);
   }
   const lines: string[] = [];
   for (const p of decidable) {
@@ -324,5 +386,6 @@ export function arbitrate(itemText: string, proposals: ProposalInput[]): Arbitra
     deleted: decidable.map((p) => p.filename),
     remaining: remaining.map((p) => p.filename),
     flags,
+    receipts: decidable.map(p => ({ id: p.stem, filename: p.filename, digest: sha256(sorted.find(s => s.filename === p.filename)!.text), ops: p.ast.ops.map((op, i) => ({ raw: op.raw, verdict: p.verdicts[i] as 'applied' | 'overruled', reason: p.verdicts[i] === 'applied' ? 'verified in parsed target' : op.kind === 'mark' ? `merged step mark is ${findStep(parsed, op)?.mark}` : `merged item status is ${fmGet(parsed.fm, 'status')}` })) })),
   };
 }

@@ -2,6 +2,9 @@
 // (which are data, never hardcoded). Raw human files are VALID (protocol
 // #normalization) — they produce warnings, never errors.
 
+import { sectionDiagnostics } from './section-rows.js';
+import { assessCheckpoint, SIZE_TARGETS } from './checkpoint.js';
+import { serializeStep } from './serialize.js';
 import type { CorpusFile } from './corpus.js';
 import { sha256 } from './corpus.js';
 import { DIR_TO_TYPE, DOC_KINDS, STATUSES, POINTER_SCOPES } from './model.js';
@@ -20,6 +23,9 @@ export interface Finding {
   severity: 'error' | 'warning';
   relPath: string;
   message: string;
+  line?: number;
+  code?: 'malformed-entry' | 'broken-target';
+  expected?: string;
 }
 
 export interface ValidationReport {
@@ -35,13 +41,14 @@ const MEETING_ID_RE = /^[a-z0-9]+(-[a-z0-9]+)*-\d{4}-\d{2}-\d{2}$/;
 const WIKILINK_RE = /\[\[([^[\]|]+)\]\]/g;
 const OBJECT_REF_RE = /^(tasks|goals|meetings|journal|accomplishments)\/[a-z0-9][a-z0-9-]*$/;
 
-export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: SchemaSet): ValidationReport {
+export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: SchemaSet, options: { verifyHistory?: boolean } = {}): ValidationReport {
   const errors: Finding[] = [];
   const warnings: Finding[] = [];
-  const err = (relPath: string, message: string) => errors.push({ severity: 'error', relPath, message });
+  const err = (relPath: string, message: string, line?: number, code?: Finding['code']) => errors.push({ severity: 'error', relPath, message, ...(line ? { line } : {}), ...(code ? { code } : {}) });
   const warn = (relPath: string, message: string) => warnings.push({ severity: 'warning', relPath, message });
 
   const byPath = new Map(files.map((f) => [f.relPath, f]));
+  const boundedContract = ['0.4.11', '0.4.12'].includes(fmGet(parseDocFile(byPath.get('PROTOCOL.md')?.text ?? '').fm, 'version') ?? '');
   const anchorsByPath = new Map<string, Set<string>>();
   const itemMeta = new Map<string, { parent?: string; archived: boolean }>();
 
@@ -49,7 +56,7 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
   // facts (for the nesting checks after the main loop)
   for (const f of files) {
     if (f.kind !== 'item') continue;
-    const ast = parseItemFile(f.text);
+    const ast = parseItemFile(f.text, f.sourceLines);
     itemMeta.set(f.relPath, {
       parent: fmGet(ast.fm, 'parent'),
       archived: fmGet(ast.fm, 'archived') !== undefined,
@@ -92,20 +99,29 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
     }
   };
 
-  const checkTarget = (relPath: string, target: string, what: string) => {
+  const checkTarget = (relPath: string, target: string, what: string, line?: number) => {
     if (/^https?:\/\//.test(target)) return;
     const [p, anchor] = target.split('#^');
     if (!byPath.has(p!)) {
-      err(relPath, `${what} target does not resolve: ${target}`);
+      err(relPath, `${what} target does not resolve: ${target}`, line, 'broken-target');
       return;
     }
     if (anchor !== undefined && !anchorsByPath.get(p!)?.has(anchor)) {
-      err(relPath, `${what} anchor does not resolve: ${target}`);
+      err(relPath, `${what} anchor does not resolve: ${target}`, line, 'broken-target');
     }
   };
 
   for (const f of files) {
     switch (f.kind) {
+      case 'checkpoint':
+      case 'checkpoint-history': {
+        const assessment = assessCheckpoint(f.relPath, f.text, files, new Map(), options.verifyHistory !== false);
+        for (const message of assessment.errors) err(f.relPath, message);
+        for (const message of assessment.warnings) warn(f.relPath, message);
+        if (f.kind === 'checkpoint' && assessment.readiness !== 'ready')
+          warn(f.relPath, `checkpoint readiness: ${assessment.readiness}${assessment.reasons.length ? '; ' + assessment.reasons.join('; ') : ''}`);
+        break;
+      }
       case 'protocol':
         break;
       case 'schema': {
@@ -119,6 +135,8 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
         break;
       }
       case 'dashboard': {
+        if (boundedContract && Buffer.byteLength(f.text, 'utf8') > SIZE_TARGETS.overview)
+          warn(f.relPath, 'project overview exceeds 4 KiB target; use bounded groups and paging');
         const d = parseDashboard(f.text);
         if (!d.fm) warn(f.relPath, 'dashboard missing frontmatter');
         for (const key of ['updated', 'generator', 'generated', 'protocol']) {
@@ -149,8 +167,12 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
         const id = file.replace(/\.md$/, '');
         const type = DIR_TO_TYPE[dir]!;
         const schema = schemas.get(type);
-        const ast = parseItemFile(f.text);
+        const ast = parseItemFile(f.text, f.sourceLines);
 
+        for (const s of ast.sections) for (const d of sectionDiagnostics(s)) warnings.push({
+          severity: 'warning', relPath: f.relPath, line: d.line, code: 'malformed-entry', expected: d.expected,
+          message: `malformed entry in ## ${s.heading}; expected ${d.expected}; preserved verbatim`,
+        });
         if (!ast.fm) {
           warn(f.relPath, 'raw human file (valid; normalization repairs it on first touch)');
           if (!SLUG_RE.test(id)) warn(f.relPath, 'un-slugged filename; rename only if never referenced');
@@ -199,18 +221,25 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
         }
 
         const status = fmGet(ast.fm, 'status');
+        const checkpoint = fmGet(ast.fm, 'checkpoint');
+        if (checkpoint !== undefined && (type !== 'task' || checkpoint !== `${dir}/${id}/checkpoint.md` || byPath.get(checkpoint)?.kind !== 'checkpoint'))
+          err(f.relPath, 'checkpoint must resolve to the owning task current checkpoint');
         let hasBang = false;
         let summaryBlockedBy = false;
         for (const s of ast.sections) {
+          if (boundedContract && s.kind === 'prose' && s.heading === 'Summary' && Buffer.byteLength(s.lines.join('\n'), 'utf8') > SIZE_TARGETS.summary)
+            warn(f.relPath, 'Summary exceeds 1 KiB target; preview extraction into linked detail, preserving constraints');
           if (s.kind === 'malformed') warn(f.relPath, `section "## ${s.heading}" is off-grammar; treated as opaque`);
           if (s.kind === 'checklist') {
             for (const st of s.steps) {
+              if (boundedContract && [...serializeStep(st).join('\n')].length > SIZE_TARGETS.rowCharacters)
+                warnings.push({ severity: 'warning', relPath: f.relPath, line: st.rawLine, message: `Checklist row${st.anchor ? ` ^${st.anchor}` : ''} exceeds 400 characters; preserve identifiers and essential rules when extracting detail` });
               if (st.mark === '!') {
                 hasBang = true;
                 if (!st.continuations.some((c) => c.kw === 'blocked-by'))
                   err(f.relPath, `[!] step "${st.text}" has no blocked-by: continuation`);
               }
-              for (const c of st.continuations) checkTarget(f.relPath, c.target, `${c.kw}:`);
+              for (const c of st.continuations) checkTarget(f.relPath, c.target, `${c.kw}:`, c.rawLine);
             }
           }
           if (s.kind === 'prose' && s.heading === 'Summary') {
@@ -221,11 +250,11 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
           if (s.kind === 'links') {
             if (s.heading === 'Evidence' && type !== 'accomplishment')
               warn(f.relPath, '## Evidence outside an accomplishment (grammar §5 expects Artifacts here)');
-            for (const e of s.entries) checkTarget(f.relPath, e.target, `${s.heading} entry`);
+            for (const e of s.entries) checkTarget(f.relPath, e.target, `${s.heading} entry`, e.rawLine);
           }
           if (s.kind === 'docs') {
             for (const e of s.entries) {
-              checkTarget(f.relPath, e.relPath, 'Detail docs entry');
+              checkTarget(f.relPath, e.relPath, 'Detail docs entry', e.rawLine);
               if (!e.relPath.startsWith(`${dir}/${id}/`))
                 warn(f.relPath, `detail doc lives outside this item's directory: ${e.relPath}`);
             }
@@ -249,7 +278,7 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
           warn(f.relPath, 'raw detail doc (valid; normalization repairs it on first touch)');
           break;
         }
-        checkWikilinks(f.relPath, parseItemFile(f.text).sections.flatMap((s) => (s.kind === 'prose' ? s.lines : [])), 'doc prose');
+        checkWikilinks(f.relPath, parseItemFile(f.text, f.sourceLines).sections.flatMap((s) => (s.kind === 'prose' ? s.lines : [])), 'doc prose');
         if (fmGet(ast.fm, 'id') !== stem) err(f.relPath, `doc id ≠ filename stem "${stem}"`);
         const kind = fmGet(ast.fm, 'kind');
         if (kind === undefined || !DOC_KINDS.has(kind)) err(f.relPath, `doc kind invalid: ${kind}`);
@@ -271,7 +300,7 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
           break;
         }
         if (fmGet(ast.fm, 'id') !== stem) err(f.relPath, `proposal id ≠ filename stem "${stem}"`);
-        if (fmGet(ast.fm, 'item') !== itemId) err(f.relPath, `proposal item "${fmGet(ast.fm, 'item')}" ≠ staged item "${itemId}"`);
+        if (![itemId, `${parts[0]}/${itemId}`].includes(fmGet(ast.fm, 'item') ?? '')) err(f.relPath, `proposal item "${fmGet(ast.fm, 'item')}" ≠ staged item "${itemId}"`);
         const itemFile = byPath.get(itemRel);
         if (!itemFile) err(f.relPath, `staged against missing item: ${itemRel}`);
         const base = fmGet(ast.fm, 'base') ?? '';

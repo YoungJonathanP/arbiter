@@ -5,6 +5,10 @@ import { strict as assert } from 'node:assert';
 import * as fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { test } from 'node:test';
+import { parseDashboard } from '../src/core/parse.js';
+import { fmGet } from '../src/core/fm.js';
+import { regenFull } from '../src/core/dashboard.js';
+import { readProjection } from '../src/core/projection.js';
 import { createArbiterServer } from '../src/web/server.js';
 import { copyFixture } from './helpers.js';
 
@@ -39,7 +43,10 @@ test('serve: dashboard, item, doc, dir, protocol and raw routes render', async (
     assert.match(listing, /archived 2026-07-01/); // archived stays visible, flagged
 
     const raw = await (await fetch(`${base}/raw/DASHBOARD.md`)).text();
-    assert.equal(raw, fs.readFileSync(`${dir}/DASHBOARD.md`, 'utf8')); // view-as-agent = exact bytes
+    const snapshot = readProjection(dir);
+    assert.equal(raw, regenFull(snapshot.facts, fs.readFileSync(`${dir}/DASHBOARD.md`, 'utf8'), {
+      now: fmGet(parseDashboard(raw).fm, 'generated')!, protocolRaw: '"0.4.6"', inputs: snapshot.inputs,
+    })); // raw/agent dashboard = the verified current projection
 
     const protocol = await (await fetch(`${base}/protocol`)).text();
     assert.match(protocol, /Arbiter agent protocol/);
@@ -212,4 +219,45 @@ test('serve: wikilinks resolve to the file they name, or degrade to plain text',
     assert.ok(!/\[\[/.test(item.split('<details class="agent">')[0]!), 'no raw wikilink brackets in the rendered body');
   });
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('serve: current human, agent, preview and raw views exclude private files and relationships', async t => {
+  const dir = copyFixture();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const rel = 'tasks/staging-db-migration-2026q3.md';
+  const secretRef = 'tasks/secret-2026q3';
+  const secret = '---\nid: secret-2026q3\ntype: task\ntitle: Confidential launch\nstatus: todo\nvisibility: private\nupdated: 2026-09-07T09:00\n---\n\n# Confidential launch\n\nHidden body.\n';
+  fs.writeFileSync(`${dir}/${secretRef}.md`, secret);
+  fs.mkdirSync(`${dir}/${secretRef}`);
+  fs.writeFileSync(`${dir}/${secretRef}/notes.md`, '# Secret document\n');
+  fs.mkdirSync(`${dir}/${secretRef}.staged`);
+  fs.writeFileSync(`${dir}/${secretRef}.staged/proposal.md`, '# Secret proposal\n');
+  fs.writeFileSync(`${dir}/${rel}`, fs.readFileSync(`${dir}/${rel}`, 'utf8')
+    .replace('status: blocked', `status: in-flight\nrelated: [${secretRef}]`)
+    .replace('## Summary', `## Summary\nSee [Confidential launch](${secretRef}.md).`));
+  const stored = fs.readFileSync(`${dir}/DASHBOARD.md`, 'utf8');
+  fs.writeFileSync(`${dir}/DASHBOARD.md`, stored.replace('## Tasks (4)', `## Tasks (5)\n- [todo] Confidential launch — 2026-09-07 -> ${secretRef}.md`));
+  const privateDoc = 'tasks/staging-db-migration-2026q3/private-notes.md';
+  fs.mkdirSync(`${dir}/tasks/staging-db-migration-2026q3`, { recursive: true });
+  fs.writeFileSync(`${dir}/${privateDoc}`, '---\nvisibility: private\ntitle: Hidden appendix\n---\n\n# Hidden appendix\n');
+  fs.appendFileSync(`${dir}/${rel}`, `\n## Detail docs\n- [[private-notes]] Hidden appendix (note) -> ${privateDoc}\n`);
+  const sourceBefore = fs.readFileSync(`${dir}/${rel}`, 'utf8');
+  await withServer(dir, async base => {
+    for (const route of ['/', '/raw/DASHBOARD.md', '/dir/tasks', `/item/${rel.replace(/\.md$/, '')}`, `/raw/${rel}`]) {
+      const response = await fetch(base + route);
+      assert.equal(response.status, 200);
+      const text = await response.text();
+      assert.doesNotMatch(text, /Confidential|secret-2026q3|Hidden body|Secret proposal|Hidden appendix|private-notes/);
+      if (route === '/') {
+        assert.match(text, /files verified/);
+        assert.match(text, /inputs <b>sha256:/);
+        assert.match(text, /\[in-flight\] Staging DB migration/); // current agent bytes, same old updated
+      }
+    }
+    for (const route of [`/item/${secretRef}`, `/doc/${secretRef}/notes`, `/raw/${secretRef}.md`, `/raw/${secretRef}/notes.md`, `/raw/${secretRef}.staged/proposal.md`, '/raw/.arbiter/transactions/secret.json', `/raw/${privateDoc}`, '/doc/tasks/staging-db-migration-2026q3/private-notes']) {
+      assert.equal((await fetch(base + route)).status, 404);
+    }
+  });
+  assert.equal(fs.readFileSync(`${dir}/${rel}`, 'utf8'), sourceBefore);
+  assert.equal(fs.readFileSync(`${dir}/${secretRef}.md`, 'utf8'), secret);
 });

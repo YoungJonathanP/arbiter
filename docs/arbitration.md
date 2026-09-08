@@ -1,5 +1,7 @@
 # Arbitration — concurrent writes with mutual context
 
+> Historical design record. The [v0.4.9 projection/review decision](v0.4.9-projections.md) supersedes status absorption: unresolved arbitration sets separate review metadata. The v0.4.8 [commit decision](v0.4.8-recoverable-commits.md) and [grammar §9.1](grammar.md#91-verified-effects-and-recovery-v048) supersede the lock-free filesystem and Summary-receipt claims below. Pure confluence does not imply atomic persistence.
+
 *Design proposal, 2026-07-05. Validates and extends the original PROTOCOL.md concurrency rule, which specced detection ("re-read before write") and an aspiration ("merge intent — negotiate, never blind-overwrite") but no mechanism. This doc supplies the mechanism: how two writers who touch the same item come to understand each other's context, and who resolves what. It is the feature the tool is named for.*
 
 > **Decision (2026-07-05):** Model C (staged-on-contention) adopted, with proposals in hidden `.staged/` sibling directories, then amended the same day for N-writer convergence (§6). Specced in PROTOCOL.md#arbitration (replacing #concurrency) and grammar §9; the §7 deltas below are applied. This doc stands as the decision record.

@@ -1,6 +1,7 @@
 // Semantic projection of ASTs for gate-2 equality: raw concrete-syntax
 // carriers (quote styles, raw lines) are dropped; everything meaningful kept.
 
+import { orderedRows, withoutSource } from './section-rows.js';
 import type { DashboardFile, DocFile, Frontmatter, ItemFile, ProposalFile } from './model.js';
 import { scalarValue } from './fm.js';
 
@@ -25,19 +26,13 @@ export function projectItem(f: ItemFile): unknown {
         case 'malformed':
           return { kind: s.kind, heading: s.heading, lines: s.lines };
         case 'checklist':
-          return {
-            kind: s.kind,
-            heading: s.heading,
-            steps: s.steps.map((st) => ({
-              mark: st.mark,
-              text: st.text,
-              anchor: st.anchor ?? null,
-              continuations: st.continuations,
-            })),
-          };
         case 'links':
         case 'docs':
-          return { kind: s.kind, heading: s.heading, entries: s.entries };
+          return { kind: s.kind, heading: s.heading,
+            rows: orderedRows(s, (s.kind === 'checklist' ? s.steps : s.entries) as unknown[])
+              .filter(r => r.kind !== 'blank')
+              .map(r => r.kind === 'entry' ? withoutSource(r.entry) : r.kind === 'opaque' ? { opaque: r.raw } : null),
+          };
       }
     }),
   };
