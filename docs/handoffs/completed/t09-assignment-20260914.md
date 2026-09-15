@@ -1,0 +1,101 @@
+# T09: compact-contract decision review
+
+## Assignment
+
+[T09](../../improvement-tasks/09-migration-evaluation.md), [plan](../../improvement-plan.md):
+partial, unassigned, review-required; final, no successor. Local only.
+Decision review 2026-09-13: no choice supplied. Record a supplied budget/contract
+choice; otherwise checkpoint this gate. No repeated map, normative edits/adoption.
+
+## Authority
+
+Read CLAUDE.md/T09. YoungJonathanP/arbiter; 2026-09-13 main:
+`bfdc5519cc730fb0e23bb840b5ac83d6c7bddb66`. Preserve T07/T08/T09 work.
+Ask before committing. No push/publication/messages, external changes, live
+adoption/capture or regen. Live:
+`/Users/jonathanyoung/Documents/arbiter-data-2026-09-06-jonathan-young-nhw4ydwv2p`.
+Explicit --data; environment selects frozen data. Resolve paths; snapshots prove
+no external state. No agent launch.
+
+Settled 09-09: Empiricist/current-KB copies/local iterations authorized; no path/
+waiver needed. Recorded analysis needs no owner; answer questions. 09-10 items 5/6: connected people, independent access/assignment,
+optional Relevant sources, revision-based input review. App: human status/Done,
+linked notes/journals/appointments; agents maintain overview/implementation/
+continuation. New tagged input must inform or be presented at next task review.
+
+## Verified state
+
+[Clause map](../../compact-contract-map.md#measured-preservation-baseline): 81 protocol
+and 201 schema ranges cover 10 files/50,572 bytes. Proposed required-read gates. Raw module lower bounds: shared review 22,383; edit 21,563; personal
+review 25,937, before global/client/source/receipt overhead. Scoping alone exceeds
+10 KiB; rewrite needs review. Host context/allocation UNKNOWN.
+
+Docs only; 71 source hashes match prior 152/152 tests/typecheck/build pass.
+Frozen validations 26/0/0, 23/0/1 (existing raw-journal warning);
+50 frozen hashes/14 protected inventories unchanged. All 10 mapped contract hashes
+match; map unchanged. Runtime/contract: protocol/base 0.4.17, accomplishment 0.4.18.
+Missing verification warns/never counts impact; legacy/new-candidate rules retained.
+
+Prior synthetic 46,497/65,536 explicit maximum; raw sources 43,126. Export/privacy/
+input/history evidence is harness only; unknown/oversize refuses. Prior iteration
+760 files/backup 747, preservation/rollback unchanged. Fresh-agent acceptance unmet.
+
+Private root: `/Users/jonathanyoung/Documents/arbiter-t09-local-review/`.
+Current `decision-review-20260913/`; map `contract-map-20260913/`; prior evidence
+retained. No new real-data iteration.
+[evidence](t09.md#continuation-2026-09-13-decision-review-checkpoint).
+
+## Constraints and gates
+
+- Preserve live KB, USB, frozen corpora, originals/forks/backups and concurrent
+  work. Employer content/manifests outside repo; synthetic fixtures only. No private
+  subagent inputs; fresh-agent execution unauthorized/unmeasured.
+- Before further adoption read private reconciliation and
+  [gates](../../v0.4.17-personal-continuation.md#adoption-gates). New isolated copy/full
+  backup/fresh UUID required. Live rollout/reconciliation separate. Do not repeat migration.
+- Preserve prose/history, refs/anchors or redirects. Resolve proposal/checklist
+  conflicts explicitly; timestamps do not settle scope. Retain source exclusions;
+  distinguish delivery, predictions and observed acceptance.
+- Agent terminal staging/narrow human exception remain. Relationships neither
+  assign nor grant access; Relevant sources confer no authority/blockers.
+  Recorded corrections support scoped analysis; execution needs current evidence.
+- Re-observe writes, retain intent/history, reconcile interruptions first.
+  Interrupted incorporation cancels receipt intent, retaining landed prose and
+  actionable input. Never restore over concurrent edits, including host policy.
+  Sequential checks do not exclude arbitrary external editors.
+- No private prose, identities, edges, receipts or counts in shared packets.
+  Shared audiences cannot narrow for private incorporation. Permissions cannot
+  detect sensitive prose. Credentials stay in transport. Fresh IDs grant only
+  their creator; existing grants need trusted administration. Shared defaults
+  confer no publication/multiuser approval.
+- Host policy authenticates principal/source/edge access; personal export rechecks
+  revisions. Explicit dispositions need an exported session; export acknowledges
+  nothing. Private packets ephemeral; policy/KB writes sequential. Restricted
+  checkpoints need a reviewed extension if required.
+- Exclude history from normal continuation. Budget ALL context: 6 KiB target,
+  10 KiB ceiling; larger maximum/reason explicit. Never truncate rules/override
+  privacy. Count protocol/schema/client/system/tools/receipts. Digests do not replace
+  rules; synthetic zeros cannot replace host context. Export/history tests do not
+  prove agent reading/comprehension.
+
+## Next actions
+
+1. Recheck workspace/task/index, source hashes and any explicit design choice.
+2. Review map decision/budget/dispatcher/issues. Larger route needs an accepted
+   measured maximum; compact needs reviewed rewrite/dispatch, versioned decision
+   and measured client inventory.
+3. Record supplied choice and its scoped authority. Without a choice, retain
+   review-required T09 and checkpoint this gate. No repeated map/trim/migration.
+   Agent measurement and live adoption remain separate authorization gates.
+
+## Completion and outgoing capture
+
+T09 completion needs compact/fresh-session evidence and gated live reconciliation.
+After code changes: npm test (escalate localhost failures), npm run build,
+git diff --check. Validate frozen corpora with --data; verify hashes.
+Update T09/index/evidence; uniquely archive incoming with rebased links. Use
+[template](../../templates/task-handoff.md)/[design](../../task-handoffs.md); check links/size/index.
+Retain gated T09, else completion/no successor. Return this file link and
+prompt: "Open docs/handoffs/next-task.md in the Arbiter checkout. Complete its
+current assignment and, after verification, create the chaining handoff for a
+new agent exactly as instructed." End; human starts next session.

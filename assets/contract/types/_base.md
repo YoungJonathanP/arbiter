@@ -1,9 +1,9 @@
 ---
 schema: _base
-version: "0.4.12"
+version: "0.4.17"
 fields:
   id:         { type: slug,     required: true,  note: "equals the filename; with its directory it forms the permanent object ref <dir>/<id> — see PROTOCOL.md#slugs" }
-  type:       { type: enum,     required: true,  values: [task, goal, meeting, journal, accomplishment], default: "singular of the parent directory" }
+  type:       { type: enum,     required: true,  values: [task, goal, meeting, journal, accomplishment, decision, finding, person], default: "singular of the parent directory" }
   title:      { type: text,     required: true,  note: "mirrors the H1; may change freely, the id never does" }
   updated:    { type: datetime, required: true,  default: "file modification time", note: "touch on every write" }
   created:    { type: date,     required: false, default: "the slug's quarter (work items) or date (records)", note: "when the object came into being" }
@@ -12,6 +12,7 @@ fields:
   parent:     { type: ref,      required: false, note: "object ref of an owning item — a goal this task serves, or a parent task (sub-tasks stay off tier 1; see PROTOCOL.md#tier-1)" }
   related:    { type: ref-list, required: false, note: "object refs of loose siblings; follow only when the current item lacks the answer" }
   prev:       { type: ref,      required: false, note: "object ref of the predecessor iteration — see PROTOCOL.md#slugs; the forward pointer is derived, never stored" }
+  superseded-by: { type: ref, required: false, note: "explicit replacement; superseded work and records never count as current impact" }
   archived:   { type: date,     required: false, note: "set by triage; archived objects leave recency views, reports still see them — see PROTOCOL.md#archive" }
   normalized: { type: date,     required: false, note: "set once by repair — see PROTOCOL.md#normalization" }
 ---
@@ -19,10 +20,10 @@ fields:
 # Base schema
 
 Universal frontmatter carried by every item, of every type. Concrete types
-(`task`, `goal`, `meeting`, `journal`, `accomplishment`) extend this schema and
+(`task`, `goal`, `meeting`, `journal`, `accomplishment`, `decision`, `finding`, `person`) extend this schema and
 declare only their own fields, sections, and relevance rule.
 
-All concrete types inherit the v0.4.12 section-writing contract in
+All concrete types inherit the v0.4.14 section-writing contract in
 PROTOCOL.md#tier-2: Artifacts/Evidence use `- <kind>: [<label>](<target>)`;
 Detail docs use `- [[<doc-id>]] <title> (<kind>) -> <data-root-relative-path>`.
 Keep annotations inside labels or titles, and step annotations before the anchor.

@@ -1,3 +1,4 @@
+import { discover, discoveryOptions, compareItems, checkpointSummary, dependencies, compact, type DiscoveryResult } from '../core/discovery.js';
 // `arbiter serve` — the v0.6 renderer's read-only scaffold, pulled forward for
 // the dogfood trial: visual inspection of a live arbiter-data directory.
 //
@@ -10,16 +11,20 @@
 // normalization path: rendering goes through the same core parser the CLI
 // and validator use.
 
+import { audienceAllows } from '../core/input-review.js';
+import { inputRelationships, inputReviewView, readInputState } from '../core/input-storage.js';
+import type { PersonalAccess } from './personal-access.js';
+import { inputPanel, personalInputPanel, INPUT_REVIEW_JS } from './input-review.js';
 import { handoffApi, handoffPanel, HANDOFF_JS } from './handoff.js';
 import { validateCorpus } from '../core/validate.js';
 import { SchemaSet } from '../core/schema.js';
 import { orderedRows } from '../core/section-rows.js';
 import type { SectionRow } from '../core/model.js';
 import * as http from 'node:http';
-import { stagedDirFor } from '../core/corpus.js';
+import { stagedDirFor, walkCorpus } from '../core/corpus.js';
 import { computeNesting, isTerminal, type ItemFacts } from '../core/facts.js';
 import { fmGet } from '../core/fm.js';
-import { ITEM_DIRS } from '../core/model.js';
+import { ITEM_DIRS, ITEM_TYPES } from '../core/model.js';
 import { parseDashboard, parseItemFile, parseProposal } from '../core/parse.js';
 import { readProjection } from '../core/projection.js';
 import { regenFull } from '../core/dashboard.js';
@@ -27,13 +32,7 @@ import type { Section } from '../core/model.js';
 
 const MARK_TO_STATUS: Record<string, string> = { ' ': 'todo', '~': 'in-flight', '!': 'blocked', x: 'done' };
 const CHECK_GLYPH: Record<string, string> = { done: '✓', 'in-flight': '◐', blocked: '!', todo: '○' };
-const CARD_LABELS: Record<string, string> = {
-  tasks: 'Tasks',
-  goals: 'Goals',
-  meetings: 'Meetings',
-  journal: 'Journal',
-  accomplishments: 'Accomplishments',
-};
+const CARD_LABELS: Record<string, string> = Object.fromEntries(ITEM_TYPES.map(t => [t.dir, t.label]));
 
 export function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -489,7 +488,8 @@ const CSS = `
   .check.in-flight .mark { color:var(--flight); }
   .check.blocked .mark { color:var(--blocked); }
   .check.todo .mark { color:var(--todo-mark); }
-  .check.done .label { color:var(--muted); text-decoration:line-through; text-decoration-color:var(--line-strong); }
+  .check.done .label { color:var(--muted); }
+  .block.is-done > a { color:var(--muted); }
   .check .c-main { min-width:0; }
   .check .blocker { display:block; font-size:12.5px; color:var(--blocked); margin-top:2px; }
   .check .blocker a { color:var(--blocked); font-weight:600; text-decoration:underline;
@@ -627,27 +627,18 @@ function sidenav(facts: ItemFacts[], activePath: string): string {
              ${dot(f.status)}<span class="n-title">${esc(f.title)}</span></a>`;
   const groups = ITEM_DIRS.map((d) => {
     const items = facts.filter((f) => f.dir === d && !f.archived);
-    // top-level items in order, each followed by its nested sub-items
-    const rows = items
-      .filter((f) => !nest.isSub(f.ref))
-      .map(
-        (f) =>
-          navRow(f, false) +
-          nest
-            .childrenOf(f.ref)
-            .filter((c) => c.dir === d && !c.archived)
-            .map((c) => navRow(c, true))
-            .join(''),
-      )
-      .join('');
+    const rows = items.sort(compareItems).slice(0, 5).map(f => navRow(f, nest.isSub(f.ref))).join('')
+      + (items.length > 5 ? `<a class="nav-link" href="/dir/${d}">View all ${items.length} →</a>` : '');
     const active = activePath.startsWith(`/item/${d}/`) || activePath === `/dir/${d}`;
     return `<details class="nav-group${active ? ' active' : ''}"${active || items.length > 0 ? ' open' : ''}>
       <summary><a class="n-label" href="/dir/${d}">${CARD_LABELS[d]}</a><span class="n-count">${items.length}</span></summary>
       <div class="nav-items">${rows || `<span class="nav-item">—</span>`}</div></details>`;
   }).join('');
   return `<a class="nav-link${activePath === '/' ? ' active' : ''}" href="/">Dashboard</a>
+    <a class="nav-link" href="/search">Search</a>
     ${groups}
     <hr class="nav-sep">
+    <a class="nav-link" href="/active">All active work</a>
     <a class="nav-link${activePath === '/protocol' ? ' active' : ''}" href="/protocol">PROTOCOL.md</a>`;
 }
 
@@ -685,7 +676,8 @@ function page(title: string, activePath: string, facts: ItemFacts[], body: strin
     <main>${body}</main>
   </div>
 </div>
-<script>${NAV_JS}${COPY_JS}${HANDOFF_JS}</script></body></html>`;
+<script>${NAV_JS}${COPY_JS}${HANDOFF_JS}
+${INPUT_REVIEW_JS}</script></body></html>`;
 }
 
 function crumbs(parts: { label: string; href?: string }[]): string {
@@ -778,9 +770,29 @@ function renderSection(s: Section, wiki?: WikiIndex): string {
   return `<section class="block">${label}${body}</section>`;
 }
 
-export function createArbiterServer(dataDir: string): http.Server {
+function checkpointHtml(summary: ReturnType<typeof checkpointSummary>): string {
+  if (!summary) return '';
+  return `<p class="rows-note">Checkpoint: ${esc(summary.readiness)}${summary.path ? ` · <a href="${targetHref(summary.path)}">current</a>` : ''}
+    ${summary.nextAction ? `<br>Next: ${esc(summary.nextAction)}` : ''}
+    ${summary.reasons.length ? `<br>${summary.reasons.map(esc).join('; ')}${summary.reasonCount > summary.reasons.length ? ' (more in current checkpoint)' : ''}` : ''}</p>`;
+}
+function discoveryRows(rows: DiscoveryResult[]): string {
+  return rows.map(r => `<article class="block${r.status === 'done' ? ' is-done' : ''}">
+    <a href="${targetHref(r.path)}">${esc(r.title)}</a> ${statusPill(r.status)}
+    ${r.stagedCount ? `<span class="staged-chip">${r.stagedCount} staged</span>` : ''}
+    ${r.supersededBy ? `<span class="pill">superseded by ${esc(r.supersededBy)}</span>` : ''}
+    ${r.verification ? `<span class="pill">verification: ${esc(r.verification)}</span>` : ''}
+    ${r.review ? `<span class="pill needs-review">review: ${esc(r.review)}</span>` : ''}
+    ${r.archived ? `<span class="archived-flag">archived ${esc(r.archived)}</span>` : ''}
+    <div class="rows-note">Tier ${r.tier} · ${esc(r.path)}${r.parent ? ` · parent: <a href="${targetHref(r.parent)}">${esc(r.parent)}</a>` : ''}</div>
+    <p class="summary-text"${r.status === 'done' ? ' style="color:var(--muted)"' : ''}>${esc(r.preview)}</p>${checkpointHtml(r.checkpoint)}</article>`).join('') || '<p class="empty">No results</p>';
+}
+
+export function createArbiterServer(dataDir: string, options: { personalAccess?: PersonalAccess } = {}): http.Server {
   const handoffs = handoffApi(dataDir);
+  const personal = options.personalAccess ? handoffApi(dataDir, options.personalAccess) : null;
   return http.createServer((req, res) => {
+    if (req.url === '/personal/api' && personal) { void personal.handle(req, res); return; }
     if (req.url === '/api/handoff') { void handoffs.handle(req, res); return; }
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
     const send = (code: number, body: string, type = 'text/html; charset=utf-8') => {
@@ -788,6 +800,62 @@ export function createArbiterServer(dataDir: string): http.Server {
       res.end(body);
     };
     try {
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      if (url.pathname.startsWith('/personal/')) {
+        const host = req.headers.host ?? '';
+        if (!personal || !options.personalAccess) return send(404, 'Unavailable');
+        if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '')
+          || !/^(localhost|127\.0\.0\.1|\[::1\]):\d+$/.test(host)
+          || host.split(':').at(-1) !== String(req.socket.localPort)) return send(403, 'Local session required');
+        const actor = options.personalAccess.authenticate(req.headers.authorization);
+        if (!actor) { res.setHeader('WWW-Authenticate', 'Basic realm="Arbiter personal review", charset="UTF-8"'); return send(401, 'Personal authentication required'); }
+        const ref = url.pathname.slice('/personal/'.length);
+        // Credential transport only: agents can obtain the process capability
+        // without loading an unbudgeted task page or unrelated personal inputs.
+        if (ref === 'session' && req.method === 'GET')
+          return send(200, JSON.stringify({ token: personal.token }), 'application/json; charset=utf-8');
+        try {
+          if (ref === 'active') {
+            const policy = options.personalAccess.policy, revision = policy.revision;
+            const pageNumber = Number(url.searchParams.get('page') ?? 0), pageSize = 20;
+            if (!Number.isSafeInteger(pageNumber) || pageNumber < 0) return send(400, 'Invalid page');
+            const rows = walkCorpus(dataDir, { includeHistory: false }).filter(f => f.kind === 'item' && /^(tasks|goals)\//.test(f.relPath))
+              .filter(f => audienceAllows(policy.resolve(f.relPath, f.text), actor)).map(f => ({ file: f, fm: parseItemFile(f.text).fm }))
+              .filter(r => !fmGet(r.fm, 'archived') && !isTerminal(fmGet(r.fm, 'status')));
+            const body = rows.slice(pageNumber * pageSize, (pageNumber + 1) * pageSize).map(r => {
+              const task = r.file.relPath.replace(/\.md$/, '');
+              return `<p><a href="/personal/${esc(task)}">${esc(fmGet(r.fm, 'title') ?? task)}</a> · ${esc(fmGet(r.fm, 'status') ?? 'unprepared')}</p>`;
+            }).join('');
+            if (policy.revision !== revision) return send(409, 'Access changed; refresh');
+            return send(200, `<h1>Your active work</h1><p>${rows.length} accessible active goals and tasks, including nested work.</p>${body}
+              ${pageNumber > 0 ? `<a href="?page=${pageNumber - 1}">Previous</a>` : ''}
+              ${(pageNumber + 1) * pageSize < rows.length ? `<a href="?page=${pageNumber + 1}">Next</a>` : ''}`);
+          }
+          if (/^goals\/[a-z0-9][a-z0-9-]*$/.test(ref)) {
+            const policy = options.personalAccess.policy, revision = policy.revision;
+            const item = walkCorpus(dataDir, { includeHistory: false }).find(f => f.kind === 'item' && f.relPath === `${ref}.md`);
+            if (!item || !audienceAllows(policy.resolve(item.relPath, item.text), actor) || policy.revision !== revision) return send(404, 'Goal unavailable');
+            return send(200, `<h1>Goal</h1><pre style="white-space:pre-wrap">${esc(item.text)}</pre><a href="/personal/active">Your active work</a>`);
+          }
+          if (/^people\/[a-z0-9][a-z0-9-]*$/.test(ref)) {
+            const policy = options.personalAccess.policy, revision = policy.revision, files = walkCorpus(dataDir, { includeHistory: false });
+            const person = files.find(f => f.kind === 'item' && f.relPath === `${ref}.md`);
+            if (!person || !audienceAllows(policy.resolve(person.relPath, person.text), actor)) return send(404, 'Entity unavailable');
+            const rows = files.filter(f => f.kind === 'item' && f.relPath.startsWith('tasks/')).flatMap(f => {
+              const task = f.relPath.replace(/\.md$/, '');
+              return inputRelationships(dataDir, task, actor, policy).filter(e => e.entity === ref).map(e =>
+                `<p><a href="/personal/${esc(task)}">${esc(fmGet(parseItemFile(f.text).fm, 'title') ?? task)}</a> · ${esc(e.role)}</p>`);
+            });
+            if (policy.revision !== revision) return send(409, 'Access changed; refresh');
+            return send(200, `<h1>Person or entity</h1><pre>${esc(person.text)}</pre><h2>Connected work</h2>${rows.join('') || '<p>No accessible connections.</p>'}`);
+          }
+          const state = readInputState(dataDir, ref, options.personalAccess.policy);
+          if (!audienceAllows(state.task.audience, actor)) return send(404, 'Task unavailable');
+          return send(200, `<!doctype html><html><head><meta charset="utf-8"><title>Personal input review</title></head><body>
+            <h1>Personal input review</h1><a href="/personal/active">Your active work</a><pre style="white-space:pre-wrap">${esc(state.taskBytes)}</pre>
+            ${personalInputPanel(ref, personal.token, esc)}<script>${INPUT_REVIEW_JS}</script></body></html>`);
+        } catch { return send(404, 'Task unavailable'); }
+      }
       const snapshot = readProjection(dataDir);
       const facts = snapshot.facts;
       const byPath = new Map(snapshot.files.map(f => [f.relPath, f.text]));
@@ -804,6 +872,36 @@ export function createArbiterServer(dataDir: string): http.Server {
         .filter(d => d.relPath === rel && d.code === 'broken-target')
         .map(d => `<div class="banner">${d.line ? `Line ${d.line}: ` : ''}broken target: ${esc(d.message)}. Correct the path or anchor in the source file.</div>`).join('');
       const dashStamp = (): string => `files verified <b>${esc(now)}</b> · protocol <b>${esc(protocol)}</b>`;
+
+      const optionsFromUrl = () => {
+        const permitted = new Set(['q', 'tiers', 'archive', 'dir', 'status', 'parent', 'page', 'page-size', 'format']);
+        for (const key of url.searchParams.keys()) {
+          if (!permitted.has(key) || url.searchParams.getAll(key).length !== 1) throw new Error('Invalid discovery option');
+        }
+        if (url.searchParams.has('format') && url.searchParams.get('format') !== 'json') throw new Error('format must be json');
+        return { ...Object.fromEntries([...url.searchParams].filter(([k]) => !['format', 'page', 'page-size'].includes(k))),
+          page: Number(url.searchParams.get('page') ?? 0), pageSize: Number(url.searchParams.get('page-size') ?? 10) };
+      };
+      const paging = (result: ReturnType<typeof discover>, route: string) => {
+        const href = (n: number) => { const params = new URLSearchParams(url.searchParams); params.delete('format'); params.set('page', String(n)); return `${route}?${esc(params.toString())}`; };
+        return `<p>${result.total} results · page ${result.page + 1}${result.page > 0 ? ` · <a href="${href(result.page - 1)}">Previous</a>` : ''}${result.nextPage !== null ? ` · <a href="${href(result.nextPage)}">Next</a>` : ''}</p>`;
+      };
+      const renderDiscovery = (dir?: string) => {
+        const result = discover(snapshot, { ...optionsFromUrl(), ...(dir ? { dir, tiers: '2' } : {}) }, now);
+        if (url.searchParams.get('format') === 'json') return send(200, JSON.stringify(result), 'application/json; charset=utf-8');
+        const o = result.options;
+        const body = `<h1>${dir ? esc(CARD_LABELS[dir] ?? dir) + ' list' : 'Search'}</h1>
+          <p class="view-sub">Bounded source previews · archives ${esc(o.archive)} · open only the source you need</p>
+          <form method="get"><label>Search <input name="q" value="${esc(o.q)}" maxlength="200"></label>
+          ${dir ? '' : `<label>Tiers <input name="tiers" value="${esc(o.tiers)}" size="6"></label><label>Directory <input name="dir" value="${esc(o.dir ?? '')}" size="12"></label>`}
+          <label>Archives <select name="archive">${['exclude', 'include', 'only'].map(a => `<option${a === o.archive ? ' selected' : ''}>${a}</option>`).join('')}</select></label>
+          <label>Status <input name="status" value="${esc(o.status ?? '')}" size="12"></label>
+          <label>Parent <input name="parent" value="${esc(o.parent ?? '')}"></label>
+          <label>Page size <input type="number" name="page-size" min="1" max="50" value="${o.pageSize}"></label><button>Find</button></form>
+          ${paging(result, url.pathname)}${discoveryRows(result.results)}${paging(result, url.pathname)}
+          ${agentView('discovery.json', JSON.stringify(result, null, 2))}`;
+        return send(200, page(dir ?? 'Search', url.pathname, facts, body, dashStamp()));
+      };
 
       const renderDashboard = (facts: ItemFacts[]): string => {
         const text = safeRead('DASHBOARD.md');
@@ -836,7 +934,7 @@ export function createArbiterServer(dataDir: string): http.Server {
                 const done = isTerminal(e.status) ? ' is-done' : '';
                 const eref = e.relPath.replace(/\.md$/, '');
                 return `<li class="card-item${done}${epic.cls(eref)}"${epic.style(eref)}><a href="${targetHref(e.relPath)}">${dot(e.status)}
-                  <span class="title">${esc(e.title)}</span>${staged}${e.review ? `<span class="pill needs-review">review: ${esc(e.review)}</span>` : ''}<span class="when">${esc(e.date)}</span></a></li>`;
+                  <span class="title">${esc(e.title)}</span>${staged}${e.review ? `<span class="pill needs-review">review: ${esc(e.review)}</span>` : ''}<span class="when">${esc(e.date)}</span></a>${checkpointHtml(checkpointSummary(snapshot, eref))}</li>`;
               })
               .join('');
             return `<article class="card">
@@ -861,11 +959,11 @@ export function createArbiterServer(dataDir: string): http.Server {
         const title = fmGet(ast.fm, 'title') ?? ast.title ?? id;
 
         const meta: string[] = [`<span class="kind">${esc(fmGet(ast.fm, 'type') ?? dir)}</span>`];
-        for (const key of ['started', 'eta', 'due', 'date', 'created', 'updated', 'archived', 'review', 'owner'] as const) {
+        for (const key of ['started', 'eta', 'due', 'date', 'created', 'updated', 'archived', 'review', 'owner', 'scope', 'verification', 'verified-by', 'observed-on', 'reviewed-by', 'reviewed-on', 'outcome'] as const) {
           const v = fmGet(ast.fm, key);
           if (v !== undefined) meta.push(`<span class="when">${key} ${esc(v)}</span>`);
         }
-        for (const key of ['parent', 'prev', 'source', 'related'] as const) {
+        for (const key of ['parent', 'prev', 'source', 'related', 'superseded-by'] as const) {
           const v = fmGet(ast.fm, key);
           if (v !== undefined)
             meta.push(
@@ -905,28 +1003,28 @@ export function createArbiterServer(dataDir: string): http.Server {
           stagedHtml = `<div class="banner"><b>${staged.length} staged proposal(s) pending</b> — arbitrate before other work (<code>arbiter arbitrate ${esc(dir)}/${esc(id)}</code>)</div>${rendered}`;
         }
 
-        // nested sub-items: derived from the children's parent refs, never stored
-        const nest = computeNesting(facts);
-        const epic = epicColors(facts);
-        const kids = nest.childrenOf(`${dir}/${id}`).filter((c) => c.dir === dir);
-        const subLabel = dir === 'tasks' ? 'Sub-tasks' : dir === 'goals' ? 'Sub-goals' : 'Sub-items';
-        const subHtml = kids.length
-          ? `<section class="block"><div class="block-label">${subLabel} · derived</div><ul class="subitems">${kids
-              .map(
-                (c) => `<li class="subitem${isTerminal(c.status) ? ' is-done' : ''}${epic.cls(c.ref)}"${epic.style(c.ref)}><a href="/item/${esc(c.dir)}/${esc(c.id)}">${dot(c.status)}
-                  <span class="s-title">${esc(c.title)}</span>
-                  ${c.stagedCount ? `<span class="staged-chip">${c.stagedCount} staged</span>` : ''}
-                  <span class="s-sum">${plainInline(c.summaryFirst ?? '')}</span><span class="s-go">→</span></a></li>`,
-              )
-              .join('')}</ul></section>`
-          : '';
+        const childResults = discover(snapshot, { ...optionsFromUrl(), tiers: '2', parent: `${dir}/${id}` }, now);
+        const subLabel = dir === 'tasks' ? 'Sub-tasks' : 'Children';
+        const subHtml = `<section class="block"><div class="block-label">${subLabel} · derived</div>
+          <p><a href="/search?tiers=2&amp;parent=${encodeURIComponent(`${dir}/${id}`)}">Filter children or include archives</a></p>
+          ${paging(childResults, url.pathname)}${discoveryRows(childResults.results)}
+          ${agentView('children.json', JSON.stringify(childResults, null, 2))}</section>`;
+        const deps = dependencies(snapshot, `${dir}/${id}`);
+        const depPage = Number(url.searchParams.get('page') ?? 0), depSize = Number(url.searchParams.get('page-size') ?? 10);
+        const depRows = deps.slice(depPage * depSize, (depPage + 1) * depSize);
+        const depResult = { ...childResults, total: deps.length, results: [], nextPage: (depPage + 1) * depSize < deps.length ? depPage + 1 : null };
+        const dependencyHtml = deps.length ? `<section class="block"><div class="block-label">Dependencies and start predicates</div>
+          ${paging(depResult, url.pathname)}<ul>${depRows.map(d => `<li>${d.source ? `<a href="${targetHref(d.source)}">${esc(d.source)}</a> · ` : ''}${esc(compact(d.reason))}</li>`).join('')}</ul>
+          ${agentView('dependencies.json', JSON.stringify({ total: deps.length, page: depPage, pageSize: depSize, nextPage: depResult.nextPage, results: depRows }, null, 2))}</section>` : '';
 
         const body = `
           ${crumbRow([{ label: 'Dashboard', href: '/' }, { label: dir, href: `/dir/${esc(dir)}` }, { label: id }], rel)}
           <div class="view-head">${statusPill(fmGet(ast.fm, 'status'))}${facts.find(f => f.relPath === rel)?.review ? `<span class="pill needs-review">review: ${esc(facts.find(f => f.relPath === rel)!.review!)}</span>` : ''}<h1>${esc(title)}</h1></div>
           <div class="item-meta">${meta.join('')}</div>
-          ${rawNote}${stagedHtml}${targetDiagnostics(rel)}
-          ${dir === 'tasks' && ['0.4.11', '0.4.12'].includes(protocol) ? handoffPanel(`${dir}/${id}`, fmGet(ast.fm, 'owner') ?? 'unassigned', handoffs.token, esc) : ''}
+          ${rawNote}${stagedHtml}${targetDiagnostics(rel)}${checkpointHtml(checkpointSummary(snapshot, `${dir}/${id}`))}${dependencyHtml}
+          ${dir === 'tasks' && ['0.4.15', '0.4.16', '0.4.17'].includes(protocol) ? inputPanel(`${dir}/${id}`, handoffs.token, esc) : ''}
+          ${dir === 'tasks' && ['0.4.11', '0.4.12', '0.4.13', '0.4.14', '0.4.15', '0.4.16', '0.4.17'].includes(protocol) ? handoffPanel(`${dir}/${id}`, fmGet(ast.fm, 'owner') ?? 'unassigned', handoffs.token, esc) : ''}
+          ${dir === 'people' ? `<section class="block"><h2>Connected work</h2>${facts.filter(f => f.dir === 'tasks').flatMap(f => inputRelationships(dataDir, f.ref).filter(e => e.entity === `${dir}/${id}`).map(e => `<p><a href="${targetHref(f.relPath)}">${esc(f.title)}</a> · ${esc(e.role)}</p>`)).join('') || '<p>No accessible connections.</p>'}</section>` : ''}
           ${ast.sections.map((sec) => renderSection(sec, wiki)).join('')}
           ${subHtml}
           ${agentView(rel, text)}`;
@@ -951,38 +1049,26 @@ export function createArbiterServer(dataDir: string): http.Server {
         return page(title, `/doc/${dir}/${id}/${docId}`, facts, body, dashStamp());
       };
 
-      const renderDir = (facts: ItemFacts[], dir: string): string => {
-        const nest = computeNesting(facts);
-        const epic = epicColors(facts);
-        const byRef = new Map(facts.map((f) => [f.ref, f]));
-        const all = facts
-          .filter((f) => f.dir === dir)
-          .sort((a, b) => ((a.date ?? a.updatedDate ?? '') < (b.date ?? b.updatedDate ?? '') ? 1 : -1));
-        const active = all.filter((f) => !f.archived);
-        const archived = all.filter((f) => f.archived);
-        const row = (f: ItemFacts) => `
-          <a class="row${f.status ? '' : ' no-status'}${epic.cls(f.ref)}"${epic.style(f.ref)} href="/item/${esc(f.dir)}/${esc(f.id)}">
-            ${f.status ? statusPill(f.status) : ''}${f.review ? `<span class="pill needs-review">review: ${esc(f.review)}</span>` : ''}
-            <span class="r-main"><span class="r-title">${esc(f.title)}</span>
-              ${nest.isSub(f.ref) ? `<span class="sub-hint">↳ ${esc(byRef.get(f.parent!)?.title ?? f.parent!)}</span>` : ''}
-              ${f.stagedCount ? `<span class="staged-chip">${f.stagedCount} staged</span>` : ''}
-              ${f.archived ? `<span class="archived-flag">archived ${esc(f.archived)}</span>` : ''}</span>
-            <span class="r-when">${esc(f.date ?? f.updatedDate ?? '')}</span></a>`;
-        const body = `
-          ${crumbs([{ label: 'Dashboard', href: '/' }, { label: dir }])}
-          <div class="view-head"><h1>${esc(CARD_LABELS[dir] ?? dir)}</h1><span class="card-count">${active.length}</span></div>
-          <div class="view-sub">Tier 2 — recency view; archived objects are flagged below, reports still read them</div>
-          <div class="rows">${active.map(row).join('') || `<div class="empty">empty</div>`}</div>
-          ${
-            archived.length
-              ? `<div class="rows-note">archived (a flag, never a move)</div><div class="rows">${archived.map(row).join('')}</div>`
-              : ''
-          }`;
-        return page(dir, `/dir/${dir}`, facts, body, dashStamp());
-      };
-
-      const url = new URL(req.url ?? '/', 'http://localhost');
       const seg = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+      if (seg[0] === 'active' && seg.length === 1) {
+        const pageNumber = Number(url.searchParams.get('page') ?? 0), pageSize = 20;
+        if (!Number.isSafeInteger(pageNumber) || pageNumber < 0) return send(400, 'Invalid page');
+        const active = facts.filter(f => f.kind === 'work-item' && !f.archived && !isTerminal(f.status)).sort(compareItems);
+        const pendingCount = (task: string) => { try { return inputReviewView(dataDir, task).pending.length; } catch { return null; } };
+        const rows = active.slice(pageNumber * pageSize, (pageNumber + 1) * pageSize).map(f => ({
+          ref: f.ref, title: f.title, status: f.status, parent: f.parent, checkpoint: checkpointSummary(snapshot, f.ref),
+          pending: f.dir === 'tasks' && ['0.4.15', '0.4.16', '0.4.17'].includes(protocol) ? pendingCount(f.ref) : 0,
+        }));
+        const result = { total: active.length, page: pageNumber, pageSize, nextPage: (pageNumber + 1) * pageSize < active.length ? pageNumber + 1 : null, results: rows };
+        if (url.searchParams.get('format') === 'json') return send(200, JSON.stringify(result), 'application/json; charset=utf-8');
+        return send(200, page('All active work', '/active', facts, `<h1>All active work</h1><p>${result.total} active goals and tasks, including nested work.</p>
+          ${pageNumber ? `<a href="/active?page=${pageNumber - 1}">Previous</a>` : ''}
+          ${rows.map(r => `<article class="block"><a href="/item/${esc(r.ref)}">${esc(r.title)}</a> ${statusPill(r.status)}${r.parent ? `<p>Parent: <a href="/item/${esc(r.parent)}">${esc(r.parent)}</a></p>` : ''}<p>${r.pending === null ? 'Input review requires reconciliation' : `${r.pending} actionable inputs`}</p>${checkpointHtml(r.checkpoint)}</article>`).join('')}
+          ${result.nextPage !== null ? `<a href="/active?page=${result.nextPage}">Next</a>` : ''}`, dashStamp()));
+      }
+      if (seg[0] === 'search' && seg.length === 1) {
+        try { return renderDiscovery(); } catch { return send(400, 'Invalid discovery options.', 'text/plain'); }
+      }
       if (seg.length === 0) return send(200, renderDashboard(facts));
       if (seg[0] === 'protocol') {
         const t = safeRead('PROTOCOL.md');
@@ -999,9 +1085,11 @@ export function createArbiterServer(dataDir: string): http.Server {
         return t === null ? send(404, 'not found', 'text/plain') : send(200, t, 'text/plain; charset=utf-8');
       }
       if (seg[0] === 'dir' && seg.length === 2 && (ITEM_DIRS as readonly string[]).includes(seg[1]!)) {
-        return send(200, renderDir(facts, seg[1]!));
+        try { return renderDiscovery(seg[1]!); } catch { return send(400, 'Invalid discovery options.', 'text/plain'); }
       }
       if (seg[0] === 'item' && seg.length === 3) {
+        try { discoveryOptions(optionsFromUrl()); }
+        catch { return send(400, 'Invalid discovery options.', 'text/plain'); }
         const html = renderItem(facts, wikiNow(), seg[1]!, seg[2]!);
         return html === null ? send(404, page('404', url.pathname, facts, '<h1>No such item</h1>', dashStamp())) : send(200, html);
       }

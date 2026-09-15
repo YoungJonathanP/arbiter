@@ -24,6 +24,21 @@ holds volatile execution state: what is verified, where work stopped, and what t
 do next. Generate repeated identity/status/link fields from their canonical sources.
 Author only the short continuation judgment that cannot be derived safely.
 
+The [2026-09-14 product clarification](progressive-disclosure-handoffs.md) makes
+progressive disclosure the continuation criterion. For larger work, a flight is a
+manageable group represented with existing goal/parent-task links: inspect its
+summary/checklist, the next eligible task, then that task's current T3 handoff.
+A direct task URL/path starts at the task; load its parent or larger plan only as
+needed for alignment. Each checklist step retains its description, status and
+relevant task/handoff pointer. Order does not override blockers or assignment.
+
+The handoff carries essential decisions, rationale, constraints and completion
+criteria so that investigations and previous handoffs need not be read by default.
+Keep specific, labelled pointers to those sources, tickets, PRs and the larger
+plan for questions that arise. Carry a preceding task's next-task directive into
+the receiving task's current handoff; do not create a recursive history dependency.
+Required linked-input review and operating rules remain mandatory.
+
 ## Assignment boundaries
 
 - Group by an independently reviewable outcome and the code or artifact boundary.
@@ -86,6 +101,18 @@ references, protocol excerpts and metadata, not just the author's prose.
 Never silently truncate a constraint, gate or next action. Oversized packets remain
 editable and readable; only the normal export operation is gated. Humans may choose
 a larger budget with a visible reason. Test defaults on real work before hardening.
+
+These limits apply to the complete emitted handoff packet, not cumulative session
+context or subsequent relevant working reads. Session loading has a separate
+task-scoped startup allowance and working reserve; calibrate numeric values to the
+receiving client. Optional pointers are not a background loading list. Bound later
+expansions and narrow/split/checkpoint before consuming room needed to finish.
+Report packet bytes, task/source reads and available host overhead separately.
+Unknown host overhead remains
+unknown; it does not turn a measured packet into an unmeasured export. Count full
+protocol content when it is inlined, and retain installed mandatory-read duties
+when it is not. The [T09 decision](progressive-disclosure-handoffs.md#budget-scope-and-conflict-resolution)
+explicitly supersedes the proposed cumulative session gate.
 
 ## Capture and export lifecycle
 

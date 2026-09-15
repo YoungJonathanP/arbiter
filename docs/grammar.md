@@ -1,6 +1,6 @@
 # Arbiter grammar — the machine-read subset
 
-*v0.4.12 · Normative spec for the parts of arbiter-data files that tools parse, validate, and rewrite. Companion to [`assets/contract/PROTOCOL.md`](../assets/contract/PROTOCOL.md) (the agent-facing contract) — where the two disagree, this document wins for machines. Everything **not** matched by a production here is opaque prose: tools MUST preserve it byte-for-byte and MUST NOT derive meaning from it.*
+*v0.4.18 · Normative spec for the parts of arbiter-data files that tools parse, validate, and rewrite. Companion to [`assets/contract/PROTOCOL.md`](../assets/contract/PROTOCOL.md) (the agent-facing contract) — where the two disagree, this document wins for machines. Everything **not** matched by a production here is opaque prose: tools MUST preserve it byte-for-byte and MUST NOT derive meaning from it.*
 
 ## 1. Conformance
 
@@ -29,7 +29,7 @@ date        ::= year "-" month "-" day
 datetime    ::= date ("T" digit{2} ":" digit{2} (":" digit{2})? tz?)?   (* ISO 8601 *)
 quarter     ::= year "q" ("1" | "2" | "3" | "4")
 
-work-id     ::= base-slug "-" quarter                     (* task, goal, accomplishment *)
+work-id     ::= base-slug "-" quarter                     (* task, goal, accomplishment, decision, finding *)
 meeting-id  ::= base-slug "-" date
 journal-id  ::= base-slug ("-" date)?                     (* date suffix only on collision *)
 doc-id      ::= base-slug
@@ -39,7 +39,7 @@ anchor      ::= base-slug
 status      ::= "todo" | "in-flight" | "blocked" | "done" | "dropped" | "needs-review"
 mark        ::= " " | "~" | "!" | "x"                     (* todo · in-flight · blocked · done *)
 doc-kind    ::= "plan" | "investigation" | "report" | "note"
-item-dir    ::= "tasks" | "goals" | "meetings" | "journal" | "accomplishments"
+item-dir    ::= "tasks" | "goals" | "meetings" | "journal" | "accomplishments" | "decisions" | "findings"
 
 rel-path    ::= item-dir "/" path-tail
 path-tail   ::= item-id ".md" | item-id "/" doc-id ".md"
@@ -109,7 +109,7 @@ HTTP(S); local links and docs paths start at the KB root. Opaque text MUST NOT
 satisfy an arbitration op; a valid append may extend a mixed section while keeping
 its opaque material. Source positions/layout do not affect entry deduplication.
 
-Section order in canonical form: Summary, Checklist, Artifacts/Evidence, Detail docs, then opaque sections in original order. `## Evidence` appears only in accomplishments; `## Artifacts` in all other types. Which sections are required is declared per type schema.
+Section order in canonical form: Summary, Checklist, Artifacts/Evidence, Detail docs, then opaque sections in original order. `## Evidence` appears in accomplishments, decisions and findings; `## Artifacts` in all other types. Which sections are required is declared per type schema.
 
 Canonical form separates consecutive sections, and the final section from the pointer line, with exactly one blank line — in every file kind (item, doc, proposal); for prose-ending sections that blank is the last line of the `prose-block`. Readers accept zero or more blank lines there; the normalizer emits exactly one.
 
@@ -143,7 +143,7 @@ overflow     ::= "- +" count " more in " item-dir "/" eol
 entry-title  ::= text
 ```
 
-Disambiguation: an entry line is split at its **last** `" -> "` (path), then at the **last** `" — "` before that (date); a `staged-flag` is recognized only immediately after the status bracket. `entry-title` may therefore contain any of these sequences. The `staged-flag` marks items with unresolved proposals (§9); on a work-item entry its `count` is the sum over the item **and its sub-item descendants** (which have no entries of their own). Work items carry the `[status]` prefix; record types (meetings, journal, accomplishments) omit it. The entry `date` is the date part of the item's `updated` for work items and the item's `date` for records. Work-item cards list every non-archived **top-level** item and carry no `overflow`; record cards list at most 5 entries plus an `overflow` line; the header `count` is the card's entry total. Dashboard frontmatter keys: `updated` (datetime; staged proposal files are not item touches), `generator`, `generated` (datetime), `protocol`, `inputs` (`sha256:<hex>` over verified visible inputs; legacy dashboards may omit it).
+Disambiguation: an entry line is split at its **last** `" -> "` (path), then at the **last** `" — "` before that (date); a `staged-flag` is recognized only immediately after the status bracket. `entry-title` may therefore contain any of these sequences. The `staged-flag` marks items with unresolved proposals (§9); on a work-item entry its `count` is the sum over the item **and its sub-item descendants** (which have no entries of their own). Work items carry the `[status]` prefix; record types (meetings, journal, accomplishments) omit it. The entry `date` is the date part of the item's `updated` for work items and the item's `date` for records. All cards list at most 5 entries plus an `overflow` line when needed; work-item membership remains non-archived **top-level** items with the existing terminal age-off. The header `count` is the eligible total before limiting. Directory pagination reaches all non-archived items, including nested and aged-off terminal work. Dashboard frontmatter keys: `updated` (datetime; staged proposal files are not item touches), `generator`, `generated` (datetime), `protocol`, `inputs` (`sha256:<hex>` over verified visible inputs; legacy dashboards may omit it).
 
 **Current projections (v0.4.9)**: every regeneration reads current facts; `updated`
 is event/touch metadata, never a content-invalidation watermark. Same-minute,
@@ -274,7 +274,7 @@ kind-value   ::= "work-item" | "record"
 
 ```ebnf
 pointer-line ::= "<!-- arbiter:" scope " · PROTOCOL.md#" section " · " reminder " -->"
-scope        ::= "tier-1" | "tier-2" | "tier-3" | "types" | "staged" | "checkpoint"
+scope        ::= "tier-1" | "tier-2" | "tier-3" | "types" | "staged" | "checkpoint" | "input-review"
 section      ::= base-slug                                 (* a heading anchor in PROTOCOL.md *)
 reminder     ::= text                                      (* no "-->" *)
 ```
@@ -422,3 +422,201 @@ adoption adds the installed protocol/schema contract and UUID; old manual packet
 are not implicitly checkpoints. Never overwrite a historical detail document to
 create this file role. Bootstrap templates have no shared KB UUID; init creates
 one per KB. Independent forks change identity explicitly; replicas preserve it.
+
+## 17. Durable knowledge and impact (0.4.14)
+
+The supported type catalog in `src/core/model.ts` registers directory, type,
+label, kind and schema version once. Installed schemas define fields/sections.
+Schema-only custom types are not supported; adding a supported type requires a
+catalog entry and bundled schema. Corpus enumeration, facts, creation, argument
+checks, cards and human routes consume that catalog; no independent type tables.
+
+`decision` and `finding` records require date, scope, source (object ref list), and
+review (`needed` or `reviewed`). Review is distinct from execution status. New
+skeletons use scope `unassigned`, source `[]`, review `needed`. Reviewed knowledge
+requires explicit scope, reviewed-by, reviewed-on (real date at/after record date),
+nonempty Summary, Observations, Uncertainty and Evidence links. Source object refs
+and Evidence links provide provenance; links alone do not prove a claim.
+`superseded-by` is an optional object ref on any item. It must resolve without
+cycles. Preserve the superseded record and links; archive never moves files.
+
+Accomplishment schema 0.4.14 supports verification `unverified` (new default) or
+`observed`. Unverified candidates may have empty Evidence/Observations; they never
+count as impact. Observed records require stable `outcome` identity, `verified-by`,
+`observed-on` (real date at/after outcome date), nonempty Summary, Observations,
+Uncertainty, Evidence links, and nonempty `source` refs to done, non-superseded
+work. Observations and Uncertainty are prose sections with report semantics;
+their contents remain losslessly preserved. Use explicit limits or explicit none;
+do not infer verification from a URL, done status or timestamp. Legacy 0.4
+accomplishments still validate by their installed schema and evidence-link rule,
+but reports classify them as unverified until explicit evidence-model adoption.
+
+Accomplishment schema 0.4.18 also accepts those legacy bytes after adoption:
+verification, Observations and Uncertainty may be absent. Missing verification
+is unverified and emits an advisory warning; it never establishes a record's age
+or an attestation. Existing Evidence section/link requirements still apply when
+verification is absent. New skeletons and promotions explicitly emit unverified
+and both sections. All observed-record validation and report qualification rules
+above remain mandatory. Never rewrite old claims or invent observations to make
+adoption validate. Protocol/base remain 0.4.17; only this concrete schema changes.
+See the [compatibility decision](v0.4.18-legacy-accomplishments.md).
+
+`promote <work-ref> --date <date>` emits editable candidate Markdown from eligible
+completed work. The caller supplies the outcome date; updated/created are capture
+time. It copies only visible evidence links and labels the source summary as a
+candidate. It neither writes the KB nor claims the work's intended impact occurred.
+Review the proposed outcome identity against existing accomplishments, edit the
+observations and uncertainty, then capture using `write --if-match new` (or a
+current digest for an existing record). Promotion requires installed accomplishment
+schema 0.4.14; it never upgrades an installed KB.
+
+`report --since <date> [--until <date>]` emits Markdown with inclusive outcome dates
+(default until: caller's current day), generated day, counted outcomes, observed
+claims, evidence references, unresolved verification and source/archive links.
+Source paths are KB-root-relative. It reads current visibility-filtered files,
+including archives, never checkpoint histories or recursive relations. Only
+accomplishments contribute counts; journal activity and related tasks do not.
+
+Group all current eligible accomplishment records by explicit outcome identity,
+then select dates. Identical dates/claims count once and retain every source link.
+Conflicting dates/claims, any unverified duplicate, missing/invalid observations,
+future observation dates, malformed structured content or unresolved review/staging
+make the group unverified. Records without outcome identity are individual
+unverified groups. Tools cannot detect the same outcome under different identities;
+authoring review must reconcile these. Reports never rewrite/deduplicate source files.
+
+Private records/owned material are excluded before counts or text. Redacted
+accomplishments and source work are conservatively omitted; missing provenance,
+non-done/dropped/superseded work, source staging/review and superseded accomplishments
+cannot contribute text or impact. Local evidence must resolve in visible current
+item/detail files, with any checklist anchor resolving. Dropped/superseded owners
+cannot supply evidence. External links are emitted without fetching; recorded
+attestation is never represented as independent verification. Projections are
+non-atomic filesystem reads, and known-token redaction cannot detect paraphrases.
+
+## 18. Linked-input audit storage (0.4.15)
+
+Protocol 0.4.15 reserves `tasks/<id>/input-review.md` as the `input-review` file
+role. Base schema remains 0.4.14; no new universal task field is introduced.
+This role is excluded from default derived views even if its metadata is damaged.
+Normalizers MUST preserve exact ledger bytes. Writers MUST require CAS, owning-task
+staging checks and append-only history; validator errors MUST flag malformed or
+causally inconsistent events, unresolved current links and unsupported adoption.
+An unresolved write intent produces a reconciliation warning.
+
+Canonical header, including order and whitespace:
+
+```markdown
+---
+role: input-review
+version: 0.4.15
+task: tasks/<id>
+visibility: private
+---
+
+# Linked input audit
+
+```
+
+Zero or more events follow. Each is `## Event <UUID>` followed by a blank line,
+a fenced `json` block containing exactly one single-line JSON object, then a blank
+line. The final line is
+`<!-- arbiter:input-review · PROTOCOL.md#linked-input · append events; never acknowledge by timestamp -->`.
+JSON is machine-read only in this reserved role. Arbitrary Markdown prose remains
+opaque elsewhere. An append inserts complete events immediately before the final
+pointer, preserving all earlier bytes. Event `previous` is `none` initially or the
+SHA-256 revision of the exact prior event section (including its trailing blank).
+IDs are unique lowercase UUID-shaped strings and MUST never be reused.
+
+Every event has exactly `id`, `actor`, `at`, `previous`, `operation`. Actor is a
+nonempty single-line principal label; time is a parseable date-time string. The
+operation is one of these exact objects (all listed fields required):
+
+| kind | Other fields and validation |
+|---|---|
+| link | `id` (fresh incarnation UUID), `source` (journal/meeting object ref), `visibility` (shared/private) |
+| unlink | `id` (currently linked incarnation) |
+| relationship | `id` (fresh UUID), `entity` (existing object ref), `visibility` (shared/private), `role` (contributor, reviewer, stakeholder, owner, note-author) |
+| disconnect | `id` (current relationship) |
+| review | `receipts` (nonempty array, distinct link IDs) |
+| status | `status` (execution status), `checklist` (complete/preserve); only as an intent effect |
+| intent | `target`, `before` (exact string or null), `after` (exact string), `effect` (link/review/status) |
+| applied / cancelled | `intent` (the unresolved preceding intent UUID) |
+
+A receipt has exactly `task`, `source`, `link`, `revision`, `taskRevision`,
+`disposition`, `reason`, `reviewer`, `reviewedAt`. Revisions are SHA-256 prefixed
+hex digests. Task/source/link must match the active association; reason is nonempty
+single-line prose; actor and time match their review event. Disposition is
+presented/incorporated/deferred/dismissed. Sequence order, never timestamps,
+resolves successive receipts. Last input review derives from the last effective
+review event, not task `updated`; audience views expose only readable receipts'
+review time and never private reasons or actor labels.
+
+A link intent creates exactly its named source with null before bytes. Review and
+status intents change exactly their owning task, retain non-null before bytes and
+must change content. Review task revisions match the before bytes. Incorporated
+receipts and status effects require applied intent completion; an intent alone
+has no effect. While an intent is pending, the next event must apply or cancel it,
+with the same actor; other appends are refused. A cancelled intent retains its
+history. Capture interruption/reconciliation semantics and human terminal-action
+exception are in PROTOCOL Linked input and Arbitration. All other agent staging
+requirements remain unchanged.
+
+Stored edge visibility is independent of both endpoints. Default projections deny
+private edges even when both endpoints are shared. Audiences are resolved by trusted host policy, not receipt metadata or browser
+supplied readers. Default local views allow shared sources only; relationships
+never confer access or responsibility. The core access-policy adapter is a host
+interface, not personal authentication. See the [version decision](v0.4.15-input-storage.md)
+for adoption scope and remaining integration limits.
+
+## 19. Personal app and entity extension (0.4.16)
+
+Protocol/base 0.4.16 adds `person` to the universal type enum and registers `people/`
+as a record directory. The person schema version is 0.4.16, slug form `<base>`,
+required `date` and Summary. Existing concrete schemas retain their versions.
+Person/entity identity MUST NOT assign a task owner, create an account or grant
+access. Both connected-card directions MUST filter task, entity and edge before
+emitting identifiers, titles or counts.
+
+Under protocol 0.4.16, §18 retains its exact 0.4.15 header and pointer and adds
+`source-edit` with exactly `kind` and `source` (journal/meeting ref) as an intent
+effect only. It requires non-null different before/after bytes at that exact source
+and an existing link. `relationship` may also be an intent effect to create exactly
+its `people/<id>.md` endpoint with null before. Both require applied completion;
+neither creates a review receipt. Protocol 0.4.15 MUST reject these extensions.
+
+Appointment forms use meeting `title`, `date` and `updated`; time/timezone remains
+explicit descriptive prose. Editing preserves source identity, historical prose
+and anchors, appending corrections. Incorporation preview/apply MUST share the
+same byte constructor and recheck the selected source revisions, task, ledger,
+actor and policy before appending attributed prose and receipts.
+
+Personal host policy and authentication are specified in the
+[0.4.16 decision](v0.4.16-app-controls.md#trusted-local-personal-access). The policy
+lives outside the corpus. Viewer-selected grants confer nothing; identity and
+access inheritance come only from trusted host configuration. New private resource
+provisioning may grant only the authenticated creator on fresh generated IDs.
+Policy and KB changes are not a cross-file atomic transaction. Default projections
+and checkpoint exports retain conservative privacy filtering.
+
+The app's full active-work views include all accessible nonarchived/nonterminal
+goals and tasks, including nested and old active work, using 20-row pagination.
+The compact tier-1 card limit and independent checkpoint budgets remain unchanged.
+
+## 20. Authenticated input continuation (0.4.17)
+
+Protocol/base 0.4.17 adds an ephemeral authenticated personal packet alongside a
+shared canonical checkpoint; no schema, file role or ledger production changes.
+The [decision](v0.4.17-personal-continuation.md) defines the host-retained
+preview/export/review workflow. Source and edge access MUST precede inclusion.
+All authorized pending personal revisions MUST be selected and budgeted with the
+shared checkpoint, exact source bytes, constraints and metadata. The checkpoint's
+input manifest MAY be referenced without duplicating its fields. Default shared
+exports MUST exclude private context; restricted checkpoint dependencies fail closed.
+
+Export MUST reauthenticate and recheck the exact retained preview; it creates no
+receipt. Dispositions MUST require an exported session and one explicit decision
+and reason per selected revision, with task/status, source, link, receipt, policy
+and checkpoint rechecks. Staged proposals or incomplete intent require resolution
+first. The existing commit/CAS writer persists receipts; no new atomicity,
+fresh-agent measurement or execution authority is implied.

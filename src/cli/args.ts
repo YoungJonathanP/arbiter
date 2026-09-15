@@ -1,3 +1,7 @@
+import { validDate } from '../core/date.js';
+export { validDate } from '../core/date.js';
+import { ITEM_DIRS } from '../core/model.js';
+import { discoveryOptions } from '../core/discovery.js';
 export interface Args {
   cmd: string;
   positional: string[];
@@ -13,6 +17,9 @@ interface Command {
 }
 
 export const COMMANDS: Record<string, Command> = {
+  report: { usage: 'report --since <YYYY-MM-DD> [--until <YYYY-MM-DD>] [--now <timestamp>] (Markdown; inclusive outcome dates, archives included)', values: ['since', 'until', 'now'], min: 0, max: 0 },
+  promote: { usage: 'promote <work-ref> --date <YYYY-MM-DD> [--now <timestamp>] (editable unverified accomplishment Markdown; capture with write)', values: ['date', 'now'], min: 1, max: 1 },
+  search: { usage: 'search [text] [--tiers 1,2,3] [--archive exclude|include|only] [--dir <dir>] [--status <status>] [--parent <ref>] [--page <n>] [--page-size <1..50>] [--json]', values: ['tiers', 'archive', 'dir', 'status', 'parent', 'page', 'page-size'], switches: ['json'], min: 0, max: 1 },
   checkpoint: { usage: 'checkpoint <task-ref> [--file <draft-request.json> | --capture <preview.json>] (otherwise emits editable draft Markdown)', values: ['file', 'capture'], min: 1, max: 1 },
   handoff: { usage: 'handoff <task-ref> [--file <request.json> | --export <preview.json>] [--format markdown|json] (otherwise emits current preview JSON; export emits exact packet)', values: ['file', 'export', 'format'], min: 1, max: 1 },
   validate: { usage: 'validate (whole KB only; scoped paths are not supported)', min: 0, max: 0 },
@@ -27,7 +34,7 @@ export const COMMANDS: Record<string, Command> = {
   recover: { usage: 'recover [--dry-run] (inspect or recover durable commit journals)', switches: ['dry-run'], min: 0, max: 0 },
   write: { usage: 'write <path> --if-match <sha256:<hex>|<hex>|new> [--file <src>] (otherwise stdin)', values: ['if-match', 'file'], min: 1, max: 1 },
   normalize: { usage: 'normalize [--dry-run] [--now <timestamp>]', values: ['now'], switches: ['dry-run'], min: 0, max: 0 },
-  serve: { usage: 'serve [--port <0..65535>] [--host <address>] (default command; port 4870, host 127.0.0.1)', values: ['port', 'host'], min: 0, max: 0 },
+  serve: { usage: 'serve [--port <0..65535>] [--host <address>] [--personal-policy <outside-kb.json>] (default command; port 4870, host 127.0.0.1)', values: ['port', 'host', 'personal-policy'], min: 0, max: 0 },
   hash: { usage: 'hash <path> (prints sha256:<hex> for --if-match)', min: 1, max: 1 },
   help: { usage: 'help [command]', min: 0, max: 1 },
 };
@@ -36,13 +43,6 @@ function fail(message: string, cmd?: string): never {
   throw new Error(`${message}\nusage: arbiter ${cmd && COMMANDS[cmd] ? COMMANDS[cmd].usage : '<command> [args] [--data <dir>] (see --help)'}`);
 }
 
-export function validDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const [year, month, day] = value.split('-').map(Number) as [number, number, number];
-  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return year >= 1 && month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1]!;
-}
 
 export function normalizeDigest(value: string): string {
   if (value === 'new') return value;
@@ -81,6 +81,11 @@ export function parseArgs(argv: string[]): Args {
     if (flags.has('format') && !['markdown', 'json'].includes(String(flags.get('format')))) fail('format must be markdown or json', cmd);
     if (flags.has('export') && flags.has('format')) fail('format is fixed by the preview; omit --format on export', cmd);
   }
+  if (cmd === 'search') discoveryOptions({ q: words[0] ?? '', ...Object.fromEntries([...flags].filter(([k]) => !['data', 'json', 'page-size', 'page'].includes(k))), page: Number(flags.get('page') ?? 0), pageSize: Number(flags.get('page-size') ?? 10) });
+  if (cmd === 'report' && !flags.has('since')) fail('report requires --since', cmd);
+  if (cmd === 'promote' && !flags.has('date')) fail('promote requires explicit outcome --date', cmd);
+  for (const key of ['since', 'until']) if (flags.has(key) && !validDate(String(flags.get(key)))) fail(`--${key} must be a real calendar date`, cmd);
+  if (flags.has('until') && String(flags.get('until')) < String(flags.get('since'))) fail('--until must be on or after --since', cmd);
   if (cmd === 'init' && !flags.has('data')) fail('init requires explicit --data <dir>', cmd);
   if (cmd === 'propose' && (!flags.has('op') || !flags.has('intent'))) fail('propose requires --op and --intent', cmd);
   if (cmd === 'write') {
@@ -105,7 +110,7 @@ export function parseArgs(argv: string[]): Args {
     if (!Object.hasOwn(arity, sub) || !bounds || count < bounds[0] || count > bounds[1]) fail(`unknown query or invalid arguments: ${sub}`, cmd);
     if (sub === 'chain' && flags.has('json')) fail('query chain does not support --json', cmd);
     if (flags.has('now') && !['overdue', 'needs-review', 'active'].includes(sub)) fail(`query ${sub} does not use --now`, cmd);
-    if (['active', 'page'].includes(sub) && words[1] && !['tasks', 'goals', 'meetings', 'journal', 'accomplishments'].includes(words[1])) fail(`unknown item directory: ${words[1]}`, cmd);
+    if (['active', 'page'].includes(sub) && words[1] && !(ITEM_DIRS as readonly string[]).includes(words[1])) fail(`unknown item directory: ${words[1]}`, cmd);
     if (sub === 'page' && words[2] && (!/^\d+$/.test(words[2]) || !Number.isSafeInteger(Number(words[2])))) fail('page number must be a nonnegative integer', cmd);
   }
   return { cmd, positional: words, flags };

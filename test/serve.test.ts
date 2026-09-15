@@ -39,8 +39,8 @@ test('serve: dashboard, item, doc, dir, protocol and raw routes render', async (
     const doc = await (await fetch(`${base}/doc/tasks/railway-predeploy-hook-2026q3/rollout-plan`)).text();
     assert.match(doc, /Rollout plan/);
 
-    const listing = await (await fetch(`${base}/dir/goals`)).text();
-    assert.match(listing, /archived 2026-07-01/); // archived stays visible, flagged
+    const listing = await (await fetch(`${base}/dir/goals?archive=include`)).text();
+    assert.match(listing, /archived 2026-07-01/); // archives are explicitly requested, flagged
 
     const raw = await (await fetch(`${base}/raw/DASHBOARD.md`)).text();
     const snapshot = readProjection(dir);

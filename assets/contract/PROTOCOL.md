@@ -1,6 +1,6 @@
 ---
 id: protocol
-version: "0.4.12"
+version: "0.4.17"
 ---
 
 # Arbiter agent protocol
@@ -11,7 +11,7 @@ Read this file once per session. Every other file in this directory tree ends wi
 
 - Arbiter is collaborative: humans and agents read and write these files, at any tier.
 - Work at exactly one tier at a time. **Never bulk-read sibling items**; open only the files your current tier points to.
-- Layout: `DASHBOARD.md` (tier 1) → item files in `tasks/`, `goals/`, `meetings/`, `journal/`, `accomplishments/` (tier 2) → detail docs in `<dir>/<id>/` (tier 3). `types/` holds one field schema per item type — read `types/<type>.md` before writing a type for the first time in a session.
+- Layout: `DASHBOARD.md` (tier 1) → item files in `tasks/`, `goals/`, `meetings/`, `journal/`, `accomplishments/`, `decisions/`, `findings/` (tier 2) → detail docs in `<dir>/<id>/` (tier 3). `types/` holds one field schema per item type — read `types/<type>.md` before writing a type for the first time in a session.
 - Every link target, in every file, is a path from the data-directory root (`tasks/<id>.md` works from anywhere), optionally suffixed `#^<anchor>`. Never write file-relative paths.
 
 ## Tier 1
@@ -24,15 +24,17 @@ Read this file once per session. Every other file in this directory tree ends wi
   - Work items: `- [<status>] <title> — <YYYY-MM-DD> -> <path>`
   - Records (no status): `- <title> — <YYYY-MM-DD> -> <path>`
   - Pending arbitration: `- [<status>] (<N> staged) <title> — <YYYY-MM-DD> -> <path>` — unresolved proposals in `<id>.staged/` (see #arbitration); for work items `<N>` also counts proposals staged on the item's sub-items, which have no entry of their own. This flag is the most urgent thing on a card: arbitrate before other work.
-  - Overflow (record cards only): `- +<N> more in <dir>/`
+  - Overflow (any card): `- +<N> more in <dir>/`
 - The entry date is the date part of the item's `updated` for work items, and its `date` for records.
 - Review flag: `(review: needed) ` or `(review: legacy-unknown) ` follows the optional staged flag and precedes the title; it never replaces the status bracket.
 - Children of terminal, archived, private or missing parents are promoted to tier 1; invalid cycles also remain reachable while validation reports the error.
-- Work-item cards (tasks, goals) list every non-archived **top-level** item, ordered by the type's relevance rule (see `types/`): non-terminal by recency first, terminal last. Terminal items age off the card 7 days after closing; archived items never appear. A **sub-item** — one whose `parent:` resolves to an visible, non-archived, nonterminal work item in the same directory (a task under a task) — never appears on the card: it is reached through its parent (see #tier-2). The card is the complete active set of top-level work — a session initializes from this one read, never by searching directories.
-- Record cards (meetings, journal, accomplishments) list the 5 most recent non-archived entries plus an overflow count; older records are reached by recency paging at tier 2, never carried on the card.
+- Work-item cards (tasks, goals) list up to 5 non-archived **top-level** items, with an overflow count for the rest, ordered by the type's relevance rule (see `types/`): non-terminal by recency first, terminal last. Terminal items age off the card 7 days after closing; archived items never appear. A **sub-item** — one whose `parent:` resolves to an visible, non-archived, nonterminal work item in the same directory (a task under a task) — never appears on the card: it is reached through its parent (see #tier-2). The card is a bounded entry point. Follow its directory list, using pagination, to reach the complete non-archived set, including nested work.
+- Record cards (meetings, journal, accomplishments, decisions, findings) list the 5 most recent non-archived entries plus an overflow count; older records are reached by paged directory lists, never carried on the card.
 - The header `<total>` counts the card's non-archived items.
 - The `-> <path>` is the only file to open next.
 - Human additions remain source material, but unverifiable dashboard stubs and opaque strays are omitted from derived views for privacy. CLI regen retains the old dashboard in `.arbiter/transactions/`; recover the addition there and create an explicitly classified item. The renderer leaves the stored dashboard untouched.
+
+Completed rows use muted color; strikethrough (`~~text~~`) explicitly marks superseded prose, independently of checklist completion. Directory lists are navigation, not Tier 2 item files. Search defaults to tiers 2 and 3, excludes archives unless requested, and never loads checkpoint history.
 
 ## Tier 2
 
@@ -77,7 +79,7 @@ Read this file once per session. Every other file in this directory tree ends wi
 
 - The `id` is the filename and is an **immutable address**: once created it never changes, even when the title does.
 - Forms, by type:
-  - task, goal, accomplishment: `<base>-YYYYqN` (year + quarter of creation, e.g. `archived-constraint-fix-2026q3`)
+  - task, goal, accomplishment, decision, finding: `<base>-YYYYqN` (year + quarter of creation, e.g. `archived-constraint-fix-2026q3`)
   - meeting: `<base>-YYYY-MM-DD` (meeting date, e.g. `standup-2026-07-03`)
   - journal: free kebab-case `<base>`; suffix with `-YYYY-MM-DD` only on collision
 - `<base>` is lowercase kebab-case, descriptive, stable under retitling.
@@ -95,7 +97,7 @@ Read this file once per session. Every other file in this directory tree ends wi
 
 - Every file except this one ends with a single footer line:
   `<!-- arbiter:<scope> · PROTOCOL.md#<section> · <one-line reminder> -->`
-  where `<scope>` is `tier-1`, `tier-2`, `tier-3`, `types`, `staged` (proposal files), or `checkpoint`.
+  where `<scope>` is `tier-1`, `tier-2`, `tier-3`, `types`, `staged` (proposal files), or `checkpoint`/`input-review`.
 - A raw human file may lack the footer; it stays valid, and normalization appends the pointer on first touch.
 - The pointer is the file's only embedded instruction. Never add navigation guidance inside item files; never remove or reword a pointer while doing item work.
 
@@ -108,6 +110,7 @@ Concurrent writers negotiate through recorded intent, never overwrites. The writ
 3. **Contention → rebase or propose.** Diff the current file against your base.
    - Your ops commute with what changed (different fields or steps; pure appends), nothing is staged, and nothing is high-stakes → rebase onto the current state and retry step 2, at most twice.
    - Otherwise — overlapping ops, anything already staged, a high-stakes edit (any transition to or from `done`/`dropped`, or reversing a change less than 48 hours old), or retries exhausted → write a proposal file: `<dir>/<id>.staged/<YYYY-MM-DD>-<author>-<base-slug>.md`, frontmatter `id` (the immutable filename stem), `item` (canonical object ref `<dir>/<id>`; legacy bare IDs accepted within the owning staging directory), `base` (hash of the version you merged against), `author`, `updated`, `ops`, body = **why**, with evidence links. `ops` is a YAML list of op strings in exactly these forms: `set: <key> = <value>` · `mark: ^<anchor> = todo|in-flight|blocked|done` (address by `mark: "<exact step text>" = …` only when the step has no anchor) · `append: <Section> · <text>`. A mark-op setting `blocked` must cite the blocker link in the body; that link becomes the step's `blocked-by:` line when applied. The author label must be unique to your session (include a session suffix): filename uniqueness is chosen, never checked-then-created. Staging is sticky: while any proposal pends, every writer stages, so one arbitration pass sees all hands.
+   - Narrow human-action exception (0.4.15): the local task app may execute an explicitly chosen Done/Undo through its protected local-operator session, with CAS, checklist resolution and the linked-input audit intent described below. Outstanding proposals still require arbitration. This exception does not permit agents to bypass terminal-transition staging or infer a human decision from a role label.
 4. **Arbitration.** Anyone may invoke `arbiter arbitrate <dir>/<id>`. The resolver is deterministic over current bytes and fresh staged proposals. Applied operations must be verified in the parsed target structure; malformed/unsupported proposals remain staged whole. Explicitly overruled operations retain evidence and a durable disposition. New resolution lines go in `## Arbitration history`, after operational sections; preserve historical Summary prose and legacy resolution lines in place. `updated` remains the maximum input timestamp, never wall clock. A durable receipt in `.arbiter/transactions/<transaction-id>.json` binds each immutable proposal ID to its SHA-256 digest, original intent, verdicts and before/after item bytes. Delete staged intent only after the replacement and receipt are durable and verified. Identical proposal replay is a no-op; reusing an ID for different bytes remains staged. Use `arbiter propose <dir>/<id> --op '<op>' --intent '<why>'` for a unique scaffold; edit its ops list before first arbitration if needed.
 
 The `.arbiter/transactions/` history is canonical recovery data, not an index cache: retain and back it up with the KB. Recovery replays prepared writes when the base still matches, finalizes observed replacements, and preserves conflicting external bytes without overwriting them. Conflict journals are durable dispositions; read their before/after/observed bytes, reconcile into the current item with a fresh-base write (or new proposal when staging is sticky), and retain the journal as evidence. Receipt history is independent of the bounded current checkpoint and its retained versions (see #checkpoints).
@@ -139,9 +142,17 @@ Resolution rules:
 
 ## Accomplishments
 
-- **Evidence is the driver**: every accomplishment carries at least one verifiable link — merged PR, published doc, dashboard — under `## Evidence`. Impact first, mechanism second, numbers where they exist.
-- When a work item reaches `done`, distill a one-line, review-ready accomplishment into `accomplishments/` with evidence links back to the source item.
-- Accomplishment files are records, not work items: no status, never reopened. They age into the archive like everything else but are **never deleted** — reports search the archive.
+- Start with an unverified candidate when source work reaches done. `arbiter promote <work-ref> --date <outcome-date>` emits editable Markdown; review it and capture with `arbiter write --if-match new`. Promotion requires installed accomplishment schema 0.4.14 and never upgrades the KB.
+- Record stable `outcome` identity, source refs and Evidence links. Set `verification: observed` only after recording actual Observations, verified-by, observed-on and Uncertainty (explicit limits or none). A link is not verification. Unverified candidates may lack evidence and never count as impact.
+- `arbiter report --since <date> [--until <date>]` emits a dated Markdown report, including archives. One outcome identity counts once; conflicting claims/dates require reconciliation. Review different identities for accidental duplicate outcomes. Journal and related-task activity add no counts.
+- Reports separate impact claims, recorded observations, evidence references and uncertainty. They do not fetch or independently verify links. Private/redacted, dropped, superseded, staged or review-needed source work cannot contribute impact. Dates select when impact occurred, not when its record was edited.
+- Accomplishments are retained records: no status, never reopened or deleted. Use superseded-by for replacements; archives keep their original paths and remain available to reports.
+
+## Durable knowledge
+
+- Use decisions/ and findings/ for reusable knowledge that survives task closure. Set scope, date, source refs, Evidence, Observations and Uncertainty. New records use review: needed; reviewed records require reviewed-by and reviewed-on plus explicit scope and evidence.
+- Supersession is explicit: superseded-by points to a replacement object, without cycles; retain the old record. Search includes current non-archived records; use --archive include for archived knowledge. Do not treat superseded knowledge as current authority.
+- Supported types are registered by Arbiter's catalog and bundled schemas. Adding a schema file alone does not enable a custom type. Installed contracts require explicit adoption; tools do not silently upgrade them.
 
 ## Archive
 
@@ -241,3 +252,114 @@ Installed upgrades are explicit. Older manual packets remain ordinary documents;
 retain their bytes when importing. Init assigns a fresh `kb-id: urn:uuid:<uuid>`;
 replicas preserve it, independent forks deliberately change it. Never copy the
 bootstrap protocol over an installed KB to adopt a design without authorization.
+
+## Linked input
+
+Protocol 0.4.15 introduces `tasks/<id>/input-review.md`, an append-only, private
+Markdown audit ledger; grammar §18 defines its exact event representation. It is
+not a task, detail document or checkpoint and never enters default raw/search/
+handoff projections. Preserve its prior event bytes and the transaction journals.
+Explicit adoption is required before creating it in an installed KB.
+
+A journal or meeting source links to a task through a unique association incarnation.
+Removing and re-adding a link allocates a fresh ID. Review receipts name the task,
+source, incarnation, exact source/task SHA-256 revisions, reviewer, review time,
+disposition and reason. Presented/deferred revisions remain actionable;
+incorporated/dismissed revisions are resolved only at that exact revision. A source
+edit, backdated entry or new association remains pending regardless of timestamps.
+Last linked-input review derives from review events, independently of task `updated`.
+Status/Done/Undo and checkpoint capture never acknowledge input or reopen Done work.
+
+At the next task review, present every readable pending input or incorporate it
+through a reviewed, attributed task-content change. Checkpoint preview includes
+all pending shared source bytes and their revisions in the whole-packet budget;
+new input requires review. Never truncate input to fit. Review receipts require an
+explicit selected-revision action, not a preview or timestamp alone. Relevant
+sources is the human label for optional Plan inputs; neither links nor people,
+roles, staffing or timestamps confer scope authority, responsibility or blockers.
+
+The local app's process token and loopback/origin checks authorize the local
+operator capability. The server supplies that audit actor; request-supplied
+identities or grants have no effect. This is not personal-account authentication.
+Default views/actions support shared records only. A private-account adapter must
+resolve access from trusted policy with revision checks before enabling personal
+views. Relationships require readable endpoints and a readable edge, and never
+assign ownership, create accounts, grant access or send messages. Private input
+cannot be incorporated into a task with a wider audience. Do not paraphrase private
+material into shared records; a permission check cannot detect arbitrary secrets.
+
+Quick notes create linked journal records without rewriting imported task prose.
+The ledger retains capture actor/time; the source's date may describe an earlier
+event. Done requires an explicit resolution of unfinished checklist steps; pending
+proposals block the action. Undo restores the prior status/checklist/prose only
+while task bytes still match the completed action, with a new touch timestamp.
+The task app needs no agent to execute these local controls.
+
+Task/source changes first append an intent with exact before/after bytes, then
+use the shared CAS writer, reread the target, and append completion. Incorporated
+receipts become effective only after verified task-content completion. An
+interrupted intent blocks subsequent input actions. Re-observe it explicitly:
+complete a non-review effect only if its target matches the intended after bytes;
+cancel if it matches before bytes; refuse other bytes without restoration. After
+interrupted incorporation, cancel the receipt intent even if prose landed, retain
+the prose and require a fresh review. These are sequential file commits, never a
+multi-file atomic transaction; external editors remain outside the writer lock.
+
+## Personal app and connected entities
+
+Protocol/base 0.4.16 adds person/entity records under `people/` (person schema
+0.4.16). Person identity, relationship, accountable assignment and access are
+independent. A card or relationship never sends an invitation or creates an account.
+Both card directions filter task, entity and edge audiences before showing counts.
+
+The local task app offers structured status, Done/checklist resolution, Undo,
+linked notes, appointments and attributed-incorporation preview. Appointment
+corrections preserve identity, old prose/anchors and link incarnation; changed
+source revisions become pending again. Exact before/after incorporation previews
+must be rechecked before apply; landed task bytes precede review receipts.
+The 0.4.15 ledger header remains stable; protocol 0.4.16 permits source-edit intents
+for linked meeting/journal corrections and relationship intents for new person
+cards. Both need observed content completion and acknowledge no input by themselves.
+
+An explicitly configured local personal app authenticates principals using a
+host-owned policy outside the KB. Its credentials, grants and inheritance never
+come from request-authored identities, person cards or KB prose. New private notes,
+appointments, cards and edges can be reserved for their authenticated creator on
+fresh IDs. Existing grants require explicit trusted administration. Re-observe the
+policy and content after writes; multi-file sequences are not atomic and recovery
+must not overwrite concurrent changes. Private input must not become shared prose
+unless source and association audiences cover all destination readers. Permissions
+cannot detect arbitrary sensitive prose.
+
+The complete active-work app view includes accessible nonarchived/nonterminal
+goals and tasks, including nested work, with paging. Compact dashboard cards retain
+their five-entry limit. Authenticated personal review and shared checkpoint export
+are separate surfaces: default exports exclude private inputs. A receiving agent
+must resolve its authorized personal review context when applicable; never claim
+that a shared packet acknowledges excluded input.
+
+## Authenticated agent input continuation
+
+Protocol/base 0.4.17 adds an opt-in personal continuation packet alongside a
+shared canonical task checkpoint. Authenticate through trusted host policy;
+request-authored actors and grants confer nothing. Select all authorized pending
+source revisions with readable endpoints and associations. Include exact bytes,
+the current task/checkpoint, applicable rules and revision metadata. Inaccessible
+identities, bodies, edges and counts stay absent. Restricted task/checkpoint
+dependencies fail closed; this flow does not authorize private checkpoint capture.
+
+Keep personal packets out of shared checkpoints, logs and messages. Budget the
+complete emitted envelope and all source context under the checkpoint limits;
+reuse the exact checkpoint input manifest without duplicating it. Credentials
+stay in transport, outside context. Sources are evidence, not new authority.
+
+Preview/export acknowledges nothing. Reauthenticate and recheck the retained
+principal/task session before exporting exact reviewed bytes. Reconcile incomplete
+intent and staged proposals first. Before explicit per-revision dispositions,
+recheck source/link, task/status, checkpoint, receipt and host-policy revisions.
+Changes require a new preview. Receipt submission requires an exported session
+and an explicit presented/deferred/dismissed decision and reason for every selected
+revision, through the shared commit/CAS path. Incorporation uses its separate exact
+preview/apply and audience checks. Neither export nor receipts prove a fresh agent
+read the packet or authorize execution. Local filesystem operations are sequential;
+never restore over concurrent changes.

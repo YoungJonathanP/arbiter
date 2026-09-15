@@ -1,0 +1,119 @@
+{
+  "experiment": "synthetic flight continuation; no agent execution or live adoption",
+  "packet": {
+    "ordinaryBytes": 13327,
+    "ordinaryAllowed": false,
+    "targetBytes": 6144,
+    "ceilingBytes": 10240,
+    "emittedBytes": 13459,
+    "override": {
+      "maxBytes": 14336,
+      "reason": "Synthetic measurement retains essential directives and current exporter framing; no session limit implied."
+    }
+  },
+  "reads": {
+    "baseline": {
+      "tasks/search-flight-2026q3.md": 1205,
+      "tasks/verify-search-2026q3.md": 1183,
+      "tasks/verify-search-2026q3/checkpoint.md": 4128
+    },
+    "mandatory": {
+      "PROTOCOL.md": 35292,
+      "types/_base.md": 3119,
+      "types/task.md": 2230
+    },
+    "rawStartupBytes": 47157,
+    "packetStartupBytes": 55305,
+    "duplicateRecheckBytes": 5311,
+    "plannedStartupBytes": 60616,
+    "additional": {
+      "source": "tasks/verify-search-2026q3/investigation.md#whitespace-case",
+      "question": "Does whitespace count as empty?",
+      "bytes": 154
+    },
+    "unnecessaryAuthoredReads": 0,
+    "limitation": "Planned receiver reads; harness scans are not a measured agent trace."
+  },
+  "budgetProposal": {
+    "unit": "UTF-8 source bytes, not tokens or host capacity",
+    "startupAllowance": 73728,
+    "basis": "measured packet route plus fresh task/checkpoint reads; 15% headroom rounded to 4 KiB",
+    "workingReserve": 24576,
+    "reserveBasis": "provisional 8 KiB each for execution, results/verification, outgoing checkpoint",
+    "knownSourceEnvelope": 98304,
+    "stopProbeAdditionalBytes": 13113,
+    "expansionResult": "checkpoint/split",
+    "actualHostOverhead": null,
+    "actualUsableContext": null,
+    "realSessionAdmitted": false
+  },
+  "history": {
+    "checkpointGrowthBytes": 220150,
+    "detailGrowthBytes": 108001,
+    "unchangedPacket": true,
+    "unchangedBaseline": true,
+    "detailGrowthRequiresRepreview": true
+  },
+  "pending": {
+    "emittedBytes": 14295,
+    "override": {
+      "maxBytes": 14336,
+      "reason": "Synthetic measurement retains essential directives and current exporter framing; no session limit implied."
+    },
+    "oversizedBytes": 110297,
+    "pendingAfterExportAndCheckpoint": 1
+  },
+  "validation": {
+    "files": 23,
+    "errors": 0,
+    "warnings": [
+      {
+        "severity": "warning",
+        "relPath": "journal/input-bf098316-62f8-4a5e-afb1-0854c678103f.md",
+        "message": "Summary exceeds 1 KiB target; preview extraction into linked detail, preserving constraints"
+      },
+      {
+        "severity": "warning",
+        "relPath": "tasks/verify-search-2026q3/checkpoint.md",
+        "message": "checkpoint readiness: waiting"
+      },
+      {
+        "severity": "warning",
+        "relPath": "tasks/verify-search-2026q3/checkpoints/c3b07f7b13e66f5eaf1fbbef1a76c1f8159bb6213a50fc449c56a466449c3406.md",
+        "message": "checkpoint exceeds 6 KiB target; budget the complete emitted context before export"
+      }
+    ]
+  },
+  "linksChecked": 16,
+  "checks": [
+    "next eligible task and blocked release",
+    "essential predecessor directive carried",
+    "exact current exporter bytes",
+    "one justified optional section",
+    "history independent packet and baseline",
+    "same-timestamp dependency and owner changes stop execution",
+    "new and changed pending input presented",
+    "export acknowledges nothing",
+    "oversized input refused without truncation",
+    "reserve boundary stops and checkpoints",
+    "prior checkpoint preserved exactly",
+    "links and anchors resolve"
+  ],
+  "gaps": [
+    "No runtime scheduler: eligibility requires receiver judgment and rechecks.",
+    "Whole-corpus preview basis stales on ordinary detail growth although refreshed packet is identical.",
+    "Exporter expands whole selected files; selected-section reads are a receiver operation.",
+    "Parsed artifact and Evidence links support checklist anchors, not Markdown heading fragments; use file links with section labels there.",
+    "No runtime startup/reserve controller or host capacity measurement; this byte policy is a harness proposal.",
+    "Planning exports may be review-required; successful export is not execution permission."
+  ],
+  "sourceRevisions": {
+    "tasks/search-flight-2026q3.md": "b8f01087af8acee9a20adc4eb71d1e39c6ad5cbfea31aecb8d151ebd97aef34b",
+    "tasks/verify-search-2026q3.md": "ade5f7f280919b42367c1375daab0178fbcf4219ebe902d36d7601ef073df1ab",
+    "tasks/verify-search-2026q3/checkpoint.md": "4705143ae47ffb2443f4631ac455853eca76890090b403521cd660808b322684",
+    "PROTOCOL.md": "ecb263d0a9ace31e75f97231c6dcb7ab4ff9047f6542088b6b87c36e74f52aa2",
+    "types/_base.md": "67c8f74d3ae6d5bb2f065de56c098bdb5bb1433a27d34c1ceaad021045931a29",
+    "types/task.md": "a3e7ba965f628e2c918ba710d3c7dd35ef678073a0115b262a4d6b04e7cad10f",
+    "tasks/verify-search-2026q3/investigation.md": "2db862deaa30590bb7341395d75f5ac5eb3237b5dc7dbc3cf0de5fb4e700b6f8"
+  }
+}

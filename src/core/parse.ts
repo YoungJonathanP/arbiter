@@ -44,6 +44,7 @@ export function classifyPath(relPath: string): FileKind {
   if (relPath === 'PROTOCOL.md') return 'protocol';
   if (relPath === 'DASHBOARD.md') return 'dashboard';
   if (parts[0] === 'types') return 'schema';
+  if (/^tasks\/[a-z0-9][a-z0-9-]*\/input-review\.md$/.test(relPath)) return 'input-review';
   if (/^tasks\/[a-z0-9][a-z0-9-]*\/checkpoint\.md$/.test(relPath)) return 'checkpoint';
   if (/^tasks\/[a-z0-9][a-z0-9-]*\/checkpoints\/[^/]+\.md$/.test(relPath)) return 'checkpoint-history';
   if (parts.length === 3 && parts[1]!.endsWith('.staged')) return 'proposal';

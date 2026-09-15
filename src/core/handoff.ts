@@ -1,5 +1,6 @@
 // Shared capture and exact-byte handoffs. Preview artifacts are self-contained,
 // deterministic and revalidated on use; they contain no filesystem authority.
+import { inputReviewView } from './input-storage.js';
 import { walkCorpus, sha256, listStaged, type CorpusFile } from './corpus.js';
 import { assessCheckpoint, checkpointPath, CHECKPOINT_SECTIONS, contextBudget } from './checkpoint.js';
 import { parseItemFile, parseDocFile } from './parse.js';
@@ -183,6 +184,16 @@ export function previewHandoff(dir: string, request: HandoffRequest): HandoffPre
   included.set(fullProtocol ? 'PROTOCOL.md' : 'PROTOCOL.md#checkpoints', fullProtocol ? protocol : checkpointRules);
   for (const i of localInputs) if ((req.offline || req.expand?.includes(i.source.slice(3))) && i.source !== 'kb:PROTOCOL.md')
     included.set(i.source.slice(3), i.source === `kb:${req.ref}.md` ? taskAfter : state.get(i.source.slice(3)).text);
+  const inputView = inputReviewView(dir, req.ref);
+  // Present every currently actionable shared revision at continuation. Receipts
+  // need an explicit review action; capture/status timestamps never acknowledge it.
+  for (const input of inputView.pending) {
+    included.set(`linked:${input.source}@${input.revision}`, input.bytes);
+  }
+  if (inputView.pending.some(i => i.disposition === 'new')) {
+    assessment.readiness = 'review-required';
+    assessment.reasons.push('New linked input is included; review before continuing');
+  }
   const manifest = assessment.inputs.map(i => ({ source: i.source, revision: i.revision, purpose: i.purpose, included: included.has(i.source.slice(3)) ? 'full' : i.source === 'kb:PROTOCOL.md' ? 'checkpoints excerpt' : 'revision only; open selected source when needed' }));
   const metadata = {
     task: req.ref, checkpointRevision: digest(checkpoint), readiness: assessment.readiness,
@@ -190,6 +201,7 @@ export function previewHandoff(dir: string, request: HandoffRequest): HandoffPre
     mode: req.offline ? 'offline planning snapshot' : assessment.readiness === 'ready' ? 'KB-linked snapshot' : 'planning snapshot; resolve readiness before implementation',
     recheck: 'Resolve KB UUID and repository identity to receiver-local paths. Re-read current task/checkpoint and selected source revisions; verify branch/worktree, owner, current authority and live dependency predicates before implementation. No network or repository state was fetched. Assignment grants no publication, merge, messaging or external-system authority.',
     limitations: req.offline ? 'Snapshot cannot establish current tickets, PRs, permissions or repository state. Planning only until live rechecks. Repo/external contents are not bundled; resolve their identities in the receiving workspace.' : 'Requires the identified KB and its installed protocol for implementation. All packets remain snapshots; no atomic read or external-editor guarantee.',
+    ...(inputView.pending.length ? { linkedInput: inputView.pending.map(({ bytes, canIncorporate, ...input }) => input) } : {}),
     omissions: ['Prior checkpoints and transaction journals are never expanded.', 'Unselected optional sources are not loaded into the packet.'],
     override: req.override ?? null, manifest,
   };

@@ -2,6 +2,15 @@
 
 *Drafted 2026-07-04, alongside [`logseq-investigation.md`](logseq-investigation.md), whose adoptions this plan sequences.*
 
+**Direction update, 2026-09-10:** prioritize a user-facing app in the near term:
+structured task status actions without an agent, linked journals/quick notes,
+timestamp-based pending-input review, connected people/entities, and appointment
+entry. Task overview/planning/continuation remain agent-maintained. See
+[user app direction](user-app-direction.md) for the interaction boundaries and
+acceptance examples. This supersedes treating the renderer solely as a later lens;
+the historical milestones below are not evidence that these flows are implemented.
+Customer hosting and access architecture require a concrete delivery plan.
+
 **Launch (v1.0) means:** Arbiter is Jonathan's daily driver — a real `arbiter-data/` directory tracked in git, operated every working day by both agents (file tools) and the web renderer, that can produce a review-ready attestation report on demand. Not launched: hosting for other users, real-time collaboration, mobile.
 
 **Ordering principle:** the file contract before the code, the headless core before the app, dogfooding before polish. Agents are the primary client, so Arbiter becomes usable at v0.5 (files + CLI) — the renderer is a lens added afterward, not the gate.
@@ -16,7 +25,7 @@ The machine-read surface of arbiter-data, specified precisely enough that a vali
 
 - [x] **Write the real `PROTOCOL.md`** — done: [`arbiter-data/PROTOCOL.md`](../arbiter-data/PROTOCOL.md), promoted from the prototype's rendered mock: per-tier read/write rules, checklist mark semantics, tier-1 ordering rule, capture etiquette, conflict etiquette.
 - [x] **Formal grammar for the machine-read subset** — done: [`docs/grammar.md`](grammar.md) — frontmatter, checklist marks, pointer lines, tier-1 entries, plus liberal→canonical normalization table and the v0.5 conformance tests. Everything outside the grammar is opaque prose, never parsed, never rewritten.
-- [x] **Card-type schemas as data** — done: [`arbiter-data/types/`](../arbiter-data/types/) — one schema per card declaring typed fields, defaults, and its relevance rule; shared `_base` via `extends`. Adding a card type = adding a schema file, not code. (Decision: per-type slug forms — work items and accomplishments `-YYYYqN`, meetings `-YYYY-MM-DD`, journal free.)
+- [x] **Card-type schemas as data** — done: [`arbiter-data/types/`](../arbiter-data/types/) — one schema per card declaring typed fields, defaults, and its relevance rule; shared `_base` via `extends`. Supported types use one code catalog plus a schema file; schema-only plugins are not supported (T08). (Decision: per-type slug forms — work items and accomplishments `-YYYYqN`, meetings `-YYYY-MM-DD`, journal free.)
 - [x] **Stable checklist anchors** — done: `<!-- ^anchor -->` trailing comments, referenced as `path#^anchor`; PROTOCOL.md#anchors.
 - [x] **Normalization rules, written down** — done: PROTOCOL.md#normalization + grammar §12; fixpoint requirement is conformance test 1.
 - [x] **Arbitration protocol** — added 2026-07-05 after spec review: [`docs/arbitration.md`](arbitration.md) (decision record), PROTOCOL.md#arbitration, grammar §9. Staged-on-contention: contended/high-stakes writes become intent-carrying proposal files in `<id>.staged/`; second writer owns the merge; semantic resolution rules; 24h orphan sweep.
@@ -41,6 +50,15 @@ The machine-read surface of arbiter-data, specified precisely enough that a vali
 - [ ] **File watcher + reconcile** — agents keep writing files while the app runs; the app re-indexes on change.
 - [ ] **Write path with conflict signal** — app edits (status ticks, checklist marks) go through the core normalizer; concurrent-write detection via content hash so agents can negotiate as PROTOCOL.md prescribes.
 - [ ] **View-as-agent toggle** over the real files (carried over from the prototype).
+- [ ] **Structured human task actions** — status/Done/Undo and linked quick notes
+  through the shared write path; ordinary task prose remains agent-maintained.
+- [ ] **Pending linked input** — show new or revised task-tagged journal entries;
+  agent review records source-specific dispositions without losing notes after
+  unrelated task/status updates. See [acceptance cases](user-app-direction.md#acceptance-examples-for-copied-or-synthetic-data).
+- [ ] **People/entity relationships** — shared-work connections with explicit
+  roles and viewer-appropriate visibility; association does not imply assignment.
+- [ ] **Structured appointments** — create/link calendar items; external calendar
+  synchronization remains a separately selected integration.
 
 **Exit criteria:** the prototype is deleted; daily use happens in the renderer with agents writing underneath it.
 
@@ -48,14 +66,18 @@ The machine-read surface of arbiter-data, specified precisely enough that a vali
 
 - [ ] **Agent-session capture** — a Claude Code skill/hook so sessions in any repo append journal entries and update touched items in arbiter-data without being asked.
 - [ ] **"Note for later" inbox** — lowest-friction capture for work done outside agentic workflows; inbox items normalize into typed items on next agent touch.
-- [ ] **Raw-entry reconciliation** — hand-added entries at any tier (including DASHBOARD.md) survive regeneration as stubs, per the README's human-friendliness guarantee.
+- [ ] **Human-input reconciliation** — journals and linked notes are the normal
+  freeform entry surfaces. Preserve imported raw entries and historical dashboard
+  additions during migration; do not expose arbitrary task-body editing as the
+  default app workflow. Reconcile relevant input during the next agent review.
 
 **Exit criteria:** a normal work week produces a substantially complete journal with no manual bookkeeping.
 
 ## v0.8 — Attestation & search
 
-- [ ] **Accomplishment promotion flow** — turn done items with evidence into review-ready accomplishment records; flag evidence-less candidates.
-- [ ] **Timeline / impact report generation** — date-ranged attestation reports (markdown out) built from accomplishments + journal; the review-season deliverable.
+- [x] **Accomplishment promotion flow** — editable unverified candidates from completed work; explicit CAS capture and recorded verification (T08).
+- [x] **Impact report generation** — date-ranged Markdown from accomplishment attestations, including archives and uncertainty; journal activity adds no impact counts (T08).
+- [ ] **Timeline view** — activity chronology remains separate from impact.
 - [ ] **Search** across all tiers (index-backed; likely SQLite FTS).
 - [ ] **Archive rolls** — quarterly roll of aged-out items, keeping the hot set small and tier-1 fast.
 

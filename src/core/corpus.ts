@@ -17,6 +17,7 @@ export interface CorpusFile {
   text: string;
   mtime: Date;
   /** Visible line index → original 1-based source line; present on filtered projections. */
+  redacted?: boolean; // projection removed source lines; never use as complete attestation
   sourceLines?: readonly number[];
 }
 

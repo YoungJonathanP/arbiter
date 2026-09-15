@@ -1,3 +1,5 @@
+import { checkInputProtocol, parseInputLedger, replayInputEvents } from './input-storage-format.js';
+import { validDate } from './date.js';
 // Validator: judges a data directory against grammar.md + the type schemas
 // (which are data, never hardcoded). Raw human files are VALID (protocol
 // #normalization) — they produce warnings, never errors.
@@ -7,7 +9,7 @@ import { assessCheckpoint, SIZE_TARGETS } from './checkpoint.js';
 import { serializeStep } from './serialize.js';
 import type { CorpusFile } from './corpus.js';
 import { sha256 } from './corpus.js';
-import { DIR_TO_TYPE, DOC_KINDS, STATUSES, POINTER_SCOPES } from './model.js';
+import { DIR_TO_TYPE, ITEM_DIRS, DOC_KINDS, STATUSES, POINTER_SCOPES } from './model.js';
 import { fmGet, fmGetList } from './fm.js';
 import {
   parseDashboard,
@@ -39,7 +41,7 @@ const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const WORK_ID_RE = /^[a-z0-9]+(-[a-z0-9]+)*-\d{4}q[1-4]$/;
 const MEETING_ID_RE = /^[a-z0-9]+(-[a-z0-9]+)*-\d{4}-\d{2}-\d{2}$/;
 const WIKILINK_RE = /\[\[([^[\]|]+)\]\]/g;
-const OBJECT_REF_RE = /^(tasks|goals|meetings|journal|accomplishments)\/[a-z0-9][a-z0-9-]*$/;
+const OBJECT_REF_RE = new RegExp(`^(${ITEM_DIRS.join('|')})/[a-z0-9][a-z0-9-]*$`);
 
 export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: SchemaSet, options: { verifyHistory?: boolean } = {}): ValidationReport {
   const errors: Finding[] = [];
@@ -48,7 +50,7 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
   const warn = (relPath: string, message: string) => warnings.push({ severity: 'warning', relPath, message });
 
   const byPath = new Map(files.map((f) => [f.relPath, f]));
-  const boundedContract = ['0.4.11', '0.4.12'].includes(fmGet(parseDocFile(byPath.get('PROTOCOL.md')?.text ?? '').fm, 'version') ?? '');
+  const boundedContract = ['0.4.11', '0.4.12', '0.4.13', '0.4.14', '0.4.15', '0.4.16', '0.4.17'].includes(fmGet(parseDocFile(byPath.get('PROTOCOL.md')?.text ?? '').fm, 'version') ?? '');
   const anchorsByPath = new Map<string, Set<string>>();
   const itemMeta = new Map<string, { parent?: string; archived: boolean }>();
 
@@ -113,6 +115,20 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
 
   for (const f of files) {
     switch (f.kind) {
+      case 'input-review': {
+        try {
+          const task = f.relPath.split('/').slice(0, 2).join('/');
+          const events = parseInputLedger(task, f.text);
+          checkInputProtocol(events, fmGet(parseDocFile(byPath.get('PROTOCOL.md')?.text ?? '').fm, 'version') ?? '');
+          const state = replayInputEvents(events);
+          if (!byPath.has(`${task}.md`)) err(f.relPath, 'Input-review task does not resolve');
+          if (!['0.4.15', '0.4.16', '0.4.17'].includes(fmGet(parseDocFile(byPath.get('PROTOCOL.md')?.text ?? '').fm, 'version') ?? '')) err(f.relPath, 'Input-review role requires protocol 0.4.15');
+          for (const link of state.links) if (!byPath.has(`${link.source}.md`)) err(f.relPath, 'Linked source does not resolve');
+          for (const edge of state.relationships) if (!byPath.has(`${edge.entity}.md`)) err(f.relPath, 'Connected entity does not resolve');
+          if (state.pending) warn(f.relPath, 'Incomplete input action requires explicit reconciliation');
+        } catch (error) { err(f.relPath, error instanceof Error ? error.message : 'Invalid input-review ledger'); }
+        break;
+      }
       case 'checkpoint':
       case 'checkpoint-history': {
         const assessment = assessCheckpoint(f.relPath, f.text, files, new Map(), options.verifyHistory !== false);
@@ -220,6 +236,42 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
           }
         }
 
+        const superseded = fmGet(ast.fm, 'superseded-by');
+        if (superseded !== undefined) {
+          if (!OBJECT_REF_RE.test(superseded) || !byPath.has(`${superseded}.md`)) err(f.relPath, 'superseded-by must resolve to an object ref');
+          const seen = new Set([`${dir}/${id}`]);
+          let next: string | undefined = superseded;
+          while (next) {
+            if (seen.has(next)) { err(f.relPath, 'supersession cycle'); break; }
+            seen.add(next);
+            next = fmGet(parseItemFile(byPath.get(`${next}.md`)?.text ?? '').fm, 'superseded-by');
+          }
+        }
+        if (type === 'accomplishment' && schema?.version === '0.4.18' && fmGet(ast.fm, 'verification') === undefined)
+          warn(f.relPath, 'Accomplishment has no verification metadata; retained as unverified, not counted impact');
+        const observed = type === 'accomplishment' && fmGet(ast.fm, 'verification') === 'observed';
+        const reviewed = ['decision', 'finding'].includes(type) && fmGet(ast.fm, 'review') === 'reviewed';
+        if (observed || reviewed) {
+          const who = observed ? 'verified-by' : 'reviewed-by', when = observed ? 'observed-on' : 'reviewed-on';
+          if (!fmGet(ast.fm, who)?.trim()) err(f.relPath, `${who} required for recorded observation/review`);
+          const date = fmGet(ast.fm, when);
+          if (!date || !validDate(date) || date < (fmGet(ast.fm, 'date') ?? '')) err(f.relPath, `${when} must be a real date on or after the record date`);
+          for (const heading of ['Summary', 'Observations', 'Uncertainty']) {
+            if (!ast.sections.some(s => s.kind === 'prose' && s.heading === heading && s.lines.join('').trim())) err(f.relPath, `nonempty ${heading} required for recorded observation/review`);
+          }
+          if (!ast.sections.some(s => s.kind === 'links' && s.heading === 'Evidence' && s.entries.length)) err(f.relPath, 'Evidence required for recorded observation/review');
+          if (reviewed && (!fmGet(ast.fm, 'scope')?.trim() || fmGet(ast.fm, 'scope') === 'unassigned')) err(f.relPath, 'reviewed knowledge requires explicit scope');
+          if (observed) {
+            if (!fmGet(ast.fm, 'outcome')?.trim()) err(f.relPath, 'observed accomplishment requires stable outcome identity');
+            const sources = fmGetList(ast.fm, 'source') ?? [];
+            if (!sources.length) err(f.relPath, 'observed accomplishment requires source work');
+            for (const source of sources) {
+              const sourceAst = parseItemFile(byPath.get(`${source}.md`)?.text ?? '');
+              if (schemas.get(fmGet(sourceAst.fm, 'type') ?? '')?.kind !== 'work-item' || fmGet(sourceAst.fm, 'status') !== 'done' || fmGet(sourceAst.fm, 'superseded-by'))
+                err(f.relPath, 'observed accomplishment source must be completed, non-superseded work');
+            }
+          }
+        }
         const status = fmGet(ast.fm, 'status');
         const checkpoint = fmGet(ast.fm, 'checkpoint');
         if (checkpoint !== undefined && (type !== 'task' || checkpoint !== `${dir}/${id}/checkpoint.md` || byPath.get(checkpoint)?.kind !== 'checkpoint'))
@@ -248,7 +300,7 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
           if (s.kind === 'prose' && s.heading !== 'Detail docs') checkWikilinks(f.relPath, s.lines, `## ${s.heading}`);
           if (s.kind === 'checklist') checkWikilinks(f.relPath, s.steps.map((st) => st.text), 'a checklist step');
           if (s.kind === 'links') {
-            if (s.heading === 'Evidence' && type !== 'accomplishment')
+            if (s.heading === 'Evidence' && !['accomplishment', 'decision', 'finding'].includes(type))
               warn(f.relPath, '## Evidence outside an accomplishment (grammar §5 expects Artifacts here)');
             for (const e of s.entries) checkTarget(f.relPath, e.target, `${s.heading} entry`, e.rawLine);
           }
@@ -262,7 +314,7 @@ export function validateCorpus(dataDir: string, files: CorpusFile[], schemas: Sc
         }
         if (status === 'blocked' && !hasBang && !summaryBlockedBy)
           err(f.relPath, 'status: blocked requires a [!] step (or a blocked-by: line under ## Summary)');
-        if (type === 'accomplishment') {
+        if (type === 'accomplishment' && fmGet(ast.fm, 'verification') !== 'unverified') {
           const evidence = ast.sections.find((s) => s.heading === 'Evidence');
           if (!evidence || evidence.kind !== 'links' || evidence.entries.length === 0)
             err(f.relPath, 'accomplishment has no verifiable ## Evidence link');

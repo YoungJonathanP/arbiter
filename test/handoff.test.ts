@@ -16,6 +16,8 @@ import { validateCorpus } from '../src/core/validate.js';
 import { SchemaSet } from '../src/core/schema.js';
 import { createArbiterServer } from '../src/web/server.js';
 import { HANDOFF_JS } from '../src/web/handoff.js';
+import { discover } from '../src/core/discovery.js';
+import { readProjection } from '../src/core/projection.js';
 
 const ref = 'tasks/handoff-exercise-2026q3', cp = `${ref}/checkpoint.md`;
 const at = '2026-09-08T10:00';
@@ -183,7 +185,7 @@ test('human edit/preview/capture/copy/download uses exact bytes; local API rejec
   assert.equal(rebinding, 403);
   assert.equal((await fetch(`${base}/api/handoff`)).status, 405);
   const nodes = new Map<string, any>();
-  for (const id of ['handoff', ...['current', 'draft', 'editor', 'owner', 'next', 'text', 'options', 'preview', 'capture', 'copy', 'download', 'status', 'result', 'changes', 'packet'].map(s => `handoff-${s}`)]) nodes.set(id, { value: '', textContent: '', hidden: false, disabled: false, getAttribute: (name: string) => name === 'data-ref' ? ref : token });
+  for (const id of ['handoff', ...['current', 'draft', 'editor', 'owner', 'next', 'text', 'options', 'preview', 'capture', 'copy', 'download', 'status', 'result', 'changes', 'packet', 'sources'].map(s => `handoff-${s}`)]) nodes.set(id, { value: '', textContent: '', hidden: false, disabled: false, getAttribute: (name: string) => name === 'data-ref' ? ref : token });
   nodes.get('handoff-owner').value = 'agent-session'; nodes.get('handoff-options').value = '{"format":"markdown"}';
   let clipboard = '', download: Blob | undefined;
   vm.runInNewContext(HANDOFF_JS, {
@@ -204,6 +206,7 @@ test('human edit/preview/capture/copy/download uses exact bytes; local API rejec
   nodes.get('handoff-next').oninput();
   await click('preview', () => !nodes.get('handoff-capture').disabled);
   const reviewed = nodes.get('handoff-packet').textContent;
+  assert.match(nodes.get('handoff-sources').textContent, /Reason:/);
   assert.match(reviewed, /Run acceptance for ticket ABC-42/);
   await click('capture', () => !nodes.get('handoff-copy').disabled);
   assert.equal(nodes.get('handoff-packet').textContent, reviewed);
@@ -270,4 +273,22 @@ test('repository/external observations cannot silently become verified or change
   const snapshot = previewHandoff(dir, { ref, observations: observed.observations });
   assert.throws(() => exportHandoff(dir, { ...snapshot, request: { ...snapshot.request, observations: { 'repo:src/change.ts': 'sha256:' + 'b'.repeat(64) } } }), /stale/);
   assert.equal(previewHandoff(dir, { ref }).assessment.readiness, 'review-required');
+  assert.equal(discover(readProjection(dir), { q: 'handoff-exercise', tiers: '2' }).results[0]!.checkpoint!.readiness, 'review-required');
+});
+
+test('selected expansion carries its purpose and exact chosen body without following other inputs or links', t => {
+  const dir = setup(t), chosen = `${ref}/decision.md`, omitted = `${ref}/older-analysis.md`;
+  fs.mkdirSync(path.join(dir, ref));
+  fs.writeFileSync(path.join(dir, chosen), `# Decision\n\nSELECTED-BODY: retain ABC-42. See [older analysis](${omitted}).\n`);
+  fs.writeFileSync(path.join(dir, omitted), '# Old analysis\n\nOMITTED-BODY must stay outside the packet.\n');
+  const req = request(dir);
+  req.checkpoint = req.checkpoint!.replace('predicates:\n', [chosen, omitted].map((p, i) => `  decision-${i}: { source: kb:${p}, revision: sha256:${sha256(fs.readFileSync(path.join(dir, p), 'utf8'))}, observed: ${at}, purpose: ${i ? 'optional background' : 'governing compatibility decision'} }\n`).join('') + 'predicates:\n');
+  captureCheckpoint(dir, previewHandoff(dir, req));
+  const preview = previewHandoff(dir, { ref, format: 'json', expand: [chosen], override: { maxBytes: 20000, reason: 'Inspect the chosen compatibility decision with the complete packet' } });
+  const packet = JSON.parse(exportHandoff(dir, preview));
+  assert.equal(packet.sources[chosen], fs.readFileSync(path.join(dir, chosen), 'utf8'));
+  assert.equal(packet.sources[omitted], undefined);
+  assert.doesNotMatch(preview.packet, /OMITTED-BODY/);
+  assert.equal(packet.manifest.find((i: { source: string }) => i.source === `kb:${chosen}`).purpose, 'governing compatibility decision');
+  assert.throws(() => exportHandoff(dir, { ...preview, request: { ...preview.request, expand: [omitted] } }), /stale|changed/);
 });

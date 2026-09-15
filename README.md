@@ -23,7 +23,7 @@ Progressive disclosure is the core design principle: each tier holds just enough
 
 Status colors: **todo = white**, **done = green**, **in-flight = blue**, **blocked = red**, **dropped = orange** (terminal, excluded from accomplishments), **review = purple** (`review: needed` after 14+ untouched days, preserving execution status; legacy `needs-review` has unknown prior state). Tier-2 lists paginate at 10; the journal is date-segmented — its card shows the 5 most recent entries and its tier-2 page shows the last week first, older entries behind pagination.
 
-Accomplishments are records rather than work items — review-ready impact statements built for performance-review inspection by humans and agents alike. **Evidence is the driver**: every accomplishment carries verifiable links (merged PRs, published docs) under its Evidence section. Journal and meeting entries carry a subtle **private** toggle; agents skip private items unless explicitly directed.
+Accomplishments are records rather than work items — review-ready impact statements built for performance-review inspection by humans and agents alike. **Evidence is the driver**: observed accomplishments carry evidence links plus recorded observations and uncertainty; unverified candidates never count as impact. Journal and meeting entries carry a subtle **private** toggle; agents skip private items unless explicitly directed.
 
 ## Storage model
 
@@ -105,6 +105,7 @@ arbiter doctor --data <dir>       # check protocol/schema identity and corpus he
 arbiter validate                 # judge the data directory against grammar + type schemas
 arbiter regen [--full]           # regenerate DASHBOARD.md (both modes read current facts)
 arbiter triage                   # review metadata, archive flags, 24h staged sweep
+arbiter search "terms" --tiers 2,3 --archive include --page 0 --json # bounded discovery
 arbiter query <sub> [--json]     # overdue | needs-review | staged | active <dir> | page <dir> [n] | chain <ref>
 arbiter new <type> <title...> [--date YYYY-MM-DD] [--force] # dated item; reopen rule enforced
 arbiter propose <dir>/<id> --op <op> --intent <why>  # unique staged intent
@@ -120,6 +121,10 @@ Current projections share privacy filtering across dashboards, queries and human
 previews. The renderer reads current inputs on every request; its raw dashboard is
 the current projection. See [projection and review decisions](docs/v0.4.9-projections.md).
 
+Search and directory lists share bounded results with the CLI: tier filters, explicit
+archives, source previews, parent affiliation and current-checkpoint summaries.
+Cards show five entries with truthful overflow counts. See [discovery and navigation](docs/v0.4.13-discovery.md).
+
 Malformed checklist, artifact and detail-doc lines retain their text and valid
 neighbors. Validation locates the source line and expected syntax; the renderer
 keeps recognized navigation. See [parser recovery](docs/v0.4.10-parser-recovery.md).
@@ -130,8 +135,8 @@ readiness. Plan inputs can precede Checklist. Generic CAS writes preserve
 checkpoint history. [Capture/preview/copy/export tooling](docs/v0.4.12-handoff-tooling.md)
 is available through `checkpoint`, `handoff` and the local task editor.
 
-New KBs bootstrap protocol/base 0.4.12 from `assets/contract/`; concrete schemas
-remain 0.4. Legacy 0.4.6 corpora remain supported. Cooperating writers share a local
+New KBs bootstrap protocol 0.4.15/base 0.4.14 from `assets/contract/`; concrete schemas
+are 0.4 except accomplishment/decision/finding at 0.4.14. Legacy 0.4.6/8/9/10/11/12/13/14 corpora remain supported. Cooperating writers share a local
 commit lock and retain recovery history in `.arbiter/transactions/`. Back up that
 directory with the KB: it is not a disposable index. New arbitration receipts live
 under `Arbitration history`, preserving existing Summary prose. External editors
@@ -192,5 +197,38 @@ Phased action items live in [`docs/launch-plan.md`](docs/launch-plan.md). In out
 - Real file storage + renderer (the prototype embeds sample data)
 - Capture pipeline: automatic capture from agent sessions, plus a "note for later" inbox for work done outside agentic workflows
 - Status-tag maintenance and blocker resolution tracking
-- Timeline and impact/attestation reports
-- Search
+- Timeline views
+
+## Durable knowledge and impact reports
+
+Capture reusable `decision` and `finding` records with `arbiter new`, then fill in
+scope, provenance, observations and uncertainty. Mark reviewed only after checking
+evidence; retain replacements through `superseded-by`. Supported type registration
+is centralized; schema-only custom type plugins are not supported.
+
+`arbiter promote tasks/<id> --date 2026-09-01 --data <kb>` emits an editable,
+unverified accomplishment candidate. Inspect its outcome identity against existing
+records, add actual observations and limits, and capture with `write --if-match
+new`. `arbiter report --since 2026-01-01 --until 2026-09-30 --data <kb>` emits
+Markdown with archived source links, deduplicated outcome counts and uncertainty.
+A link alone is never verification. Reports label recorded attestations and do not
+fetch external sources. See [the evidence contract and examples](docs/v0.4.14-knowledge-evidence.md).
+
+
+On an explicitly adopted 0.4.15 KB, task pages offer shared linked-note capture and
+review, Done with checklist resolution, and CAS-protected Undo. Pending shared
+input appears in checkpoint previews and counts toward the export budget. Private
+account access and the full migration acceptance case remain pending; see the
+[storage decision](docs/v0.4.15-input-storage.md).
+
+The current repository app candidate is [protocol/base 0.4.16](docs/v0.4.16-app-controls.md):
+connected-person cards, appointments, exact incorporation preview, full active-work
+views and an opt-in authenticated local personal app. `serve --personal-policy`
+requires a trusted owner-only policy outside the KB; default exports remain shared.
+Installed adoption and authenticated personal continuation remain T09 gates.
+
+Authenticated agent input continuation is opt-in through the local personal API;
+see the [0.4.17 workflow and limits](docs/v0.4.17-personal-continuation.md).
+Complete personal packets include both protocol excerpts and require an explicit
+larger budget when they exceed the ordinary 10 KiB ceiling. Shared exports retain
+their privacy boundary. Installed KB adoption is a separate operation.

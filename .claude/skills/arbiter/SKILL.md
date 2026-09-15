@@ -147,8 +147,12 @@ dogfooded):
    session's history goes into the row's `see:`-linked detail doc, not the row.
 2. Append a journal entry for non-obvious findings (`arbiter new journal ...`;
    one line now beats a perfect entry never written).
-3. Closed something? Distill an accomplishment with at least one verifiable
-   evidence link (PROTOCOL.md#accomplishments). No evidence → not yet.
+3. Closed something? Follow the installed accomplishment schema. Under 0.4.14,
+   `arbiter promote <work-ref> --date <outcome-date>` emits an unverified candidate;
+   inspect the outcome identity against existing records and capture with CAS write.
+   Record actual Observations, observer/date and Uncertainty before marking observed.
+   A link alone is not verification; evidence-less candidates never count as impact.
+   Do not upgrade an installed contract to enable promotion without authorization.
 4. `arbiter regen` then `arbiter validate` — finish with the validator green.
 
 ## Never
@@ -161,9 +165,42 @@ dogfooded):
   employer content, while the tool repo's remote is a personal account. The
   data directory stays a sibling of the repo, never inside it.
 
+## Bounded discovery
+
+Use `arbiter search "terms" --tiers 2,3 --data <selected-kb>` for small source
+previews; `--archive include` or `--archive only` explicitly discovers archived
+evidence. `--dir tasks --status blocked` narrows results. `--page 0 --page-size 10
+--json` emits the same rows, order, visibility, totals and next page as human lists.
+Follow `nextPage` until the relevant source is found; do not bulk-read histories.
+For a goal’s tasks or a task’s children use `search --tiers 2 --parent <ref>`.
+Parent affiliation is hierarchy; blocked-by links and checkpoint predicates are
+separate dependencies. Current-checkpoint summaries show readiness and next action,
+never earlier handoffs. Unknown external observations still require review.
+
+Cards show at most five entries and an overflow count. Directory lists reach all
+non-archived work, including nested and aged-off items. Legacy `query active` and
+`query children` remain available as index queries; prefer paged search for bounded
+navigation. Completed rows are muted; explicit `~~text~~` marks superseded prose.
+Selected handoff sources carry a purpose/reason; use only their paths in `expand`
+and inspect the new exact preview before copying.
+
 ## Inspection
 
 `arbiter serve` renders the live directory with explicit checkpoint capture at `http://127.0.0.1:4870`
 (local-only by design — this is private data). `arbiter query
 overdue|needs-review|staged|active <dir>|chain <ref>` answers status questions
 without opening files.
+
+## Durable knowledge and reports
+
+On an explicitly adopted 0.4.14 KB, capture reusable decisions/findings with scope,
+source refs, Evidence, Observations and Uncertainty. New records need review;
+reviewed knowledge names its reviewer/date. Use superseded-by for replacements,
+retaining the original files. Search with --archive include to recover old evidence.
+
+`arbiter report --since <date> --until <date> --data <selected-kb>` emits Markdown
+with inclusive outcome dates, source/archive links and verification limits. It
+counts stable outcome identities once; reconcile different identities for the same
+impact during authoring. Related tasks and journal entries add no counts. Private,
+redacted, dropped or superseded work cannot establish impact. Reports describe
+recorded observations and never independently verify external links.

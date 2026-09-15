@@ -176,27 +176,29 @@ export interface StartPredicate {
   evidence: string;
 }
 
-export type FileKind = 'item' | 'dashboard' | 'doc' | 'checkpoint' | 'checkpoint-history' | 'proposal' | 'schema' | 'protocol';
+export type FileKind = 'input-review' | 'item' | 'dashboard' | 'doc' | 'checkpoint' | 'checkpoint-history' | 'proposal' | 'schema' | 'protocol';
 
-export const ITEM_DIRS = ['tasks', 'goals', 'meetings', 'journal', 'accomplishments'] as const;
+/** Supported type registration. Field/section definitions remain installed schema data.
+ * Arbitrary schema-only plugins are not supported; add a type here and bundle its schema. */
+export const ITEM_TYPES = [
+  { type: 'task', dir: 'tasks', label: 'Tasks', kind: 'work-item', version: '0.4', introduced: '0.4' },
+  { type: 'goal', dir: 'goals', label: 'Goals', kind: 'work-item', version: '0.4', introduced: '0.4' },
+  { type: 'meeting', dir: 'meetings', label: 'Meetings', kind: 'record', version: '0.4', introduced: '0.4' },
+  { type: 'journal', dir: 'journal', label: 'Journal', kind: 'record', version: '0.4', introduced: '0.4' },
+  { type: 'accomplishment', dir: 'accomplishments', label: 'Accomplishments', kind: 'record', version: '0.4.18', introduced: '0.4' },
+  { type: 'decision', dir: 'decisions', label: 'Decisions', kind: 'record', version: '0.4.14', introduced: '0.4.14' },
+  { type: 'person', dir: 'people', label: 'People', kind: 'record', version: '0.4.16', introduced: '0.4.16' },
+  { type: 'finding', dir: 'findings', label: 'Findings', kind: 'record', version: '0.4.14', introduced: '0.4.14' },
+] as const;
+export const ITEM_DIRS = ITEM_TYPES.map(t => t.dir);
 export type ItemDir = (typeof ITEM_DIRS)[number];
-
-export const DIR_TO_TYPE: Record<string, string> = {
-  tasks: 'task',
-  goals: 'goal',
-  meetings: 'meeting',
-  journal: 'journal',
-  accomplishments: 'accomplishment',
-};
-
-export const TYPE_TO_DIR: Record<string, string> = Object.fromEntries(
-  Object.entries(DIR_TO_TYPE).map(([d, t]) => [t, d]),
-);
+export const DIR_TO_TYPE: Record<string, string> = Object.fromEntries(ITEM_TYPES.map(t => [t.dir, t.type]));
+export const TYPE_TO_DIR: Record<string, string> = Object.fromEntries(ITEM_TYPES.map(t => [t.type, t.dir]));
 
 export const TERMINAL_STATUSES = new Set(['done', 'dropped']);
 export const STATUSES = new Set(['todo', 'in-flight', 'blocked', 'done', 'dropped', 'needs-review']);
 export const MARKS: Mark[] = [' ', '~', '!', 'x'];
 export const DOC_KINDS = new Set(['plan', 'investigation', 'report', 'note']);
-export const POINTER_SCOPES = new Set(['tier-1', 'tier-2', 'tier-3', 'types', 'staged', 'checkpoint']);
+export const POINTER_SCOPES = new Set(['tier-1', 'tier-2', 'tier-3', 'types', 'staged', 'checkpoint', 'input-review']);
 
 export const KNOWN_SECTIONS = ['Summary', 'Plan inputs', 'Checklist', 'Artifacts', 'Evidence', 'Detail docs'] as const;

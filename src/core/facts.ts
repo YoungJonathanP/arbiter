@@ -29,6 +29,10 @@ export interface ItemFacts {
   parent?: string;
   prev?: string;
   related: string[];
+  source?: string[];
+  supersededBy?: string;
+  scope?: string;
+  verification?: string;
   stagedCount: number;
   raw: boolean; // no frontmatter yet
   /** first non-empty line of ## Summary — the one-line summary nested views show */
@@ -72,6 +76,10 @@ export function extractFacts(_dataDir: string, files: CorpusFile[], schemas: Sch
       visibility: fmGet(ast.fm, 'visibility'),
       parent: fmGet(ast.fm, 'parent'),
       prev: fmGet(ast.fm, 'prev'),
+      source: fmGetList(ast.fm, 'source'),
+      supersededBy: fmGet(ast.fm, 'superseded-by'),
+      scope: fmGet(ast.fm, 'scope'),
+      verification: fmGet(ast.fm, 'verification'),
       related: fmGetList(ast.fm, 'related') ?? [],
       stagedCount: files.filter(p => p.kind === 'proposal' && p.relPath.startsWith(f.relPath.replace(/\.md$/, '.staged/'))).length,
       raw: ast.fm === null,

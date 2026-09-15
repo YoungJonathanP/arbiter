@@ -59,6 +59,8 @@ export function buildIndex(facts: ItemFacts[], dbPath = ':memory:'): IndexDb {
         rel_path: f.relPath,
       });
       if (f.parent) insertRef.run(f.ref, 'parent', f.parent);
+      for (const ref of f.source ?? []) insertRef.run(f.ref, 'source', ref);
+      if (f.supersededBy) insertRef.run(f.ref, 'superseded-by', f.supersededBy);
       if (f.prev) insertRef.run(f.ref, 'prev', f.prev);
       for (const r of f.related) insertRef.run(f.ref, 'related', r);
       f.steps.forEach((s, i) => insertStep.run(f.ref, i, s.mark, s.text, s.anchor ?? null));

@@ -9,6 +9,7 @@ import { parseTypeSchema } from './parse.js';
 
 export interface ResolvedSchema {
   name: string;
+  version?: string;
   kind: 'work-item' | 'record';
   slugForm?: string;
   fields: Map<string, FieldDef>;
@@ -60,6 +61,7 @@ export class SchemaSet {
     for (const [k, v] of own.sections) sections.set(k, v);
     const r: ResolvedSchema = {
       name,
+      version: own.version,
       kind: own.kind ?? 'record',
       slugForm: own.slugForm,
       fields,

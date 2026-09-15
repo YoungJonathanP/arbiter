@@ -58,14 +58,14 @@ test('CLI: init is explicit, non-destructive, content-free and yields a healthy 
   const dir = path.join(root, 'new-kb');
   assert.equal(cli(['init'], { data: dir }).status, 2);
   bootstrap(dir);
-  for (const name of ['tasks', 'goals', 'meetings', 'journal', 'accomplishments']) {
+  for (const name of ['tasks', 'goals', 'meetings', 'journal', 'accomplishments', 'decisions', 'findings', 'people']) {
     assert.deepEqual(fs.readdirSync(path.join(dir, name)), []);
   }
   assert.ok(fs.existsSync(path.join(dir, 'DASHBOARD.md')));
   const doctor = cli(['doctor', '--data', dir]);
   assert.equal(doctor.status, 0, doctor.stderr);
-  assert.match(doctor.stdout, /protocol 0\.4\.12/);
-  assert.match(doctor.stdout, /8 files, 0 error\(s\)/);
+  assert.match(doctor.stdout, /protocol 0\.4\.17/);
+  assert.match(doctor.stdout, /11 files, 0 error\(s\)/);
   const before = fs.readFileSync(path.join(dir, 'DASHBOARD.md'), 'utf8');
   assert.equal(cli(['init', '--data', dir]).status, 2);
   assert.equal(fs.readFileSync(path.join(dir, 'DASHBOARD.md'), 'utf8'), before);
@@ -110,7 +110,7 @@ test('CLI: missing, empty and malformed KBs have distinct diagnostics and select
 test('CLI: schema identities and supported versions are checked before use', (t) => {
   const dir = temporary(t);
   bootstrap(dir);
-  for (const version of ['0.4.6', '0.4.8', '0.4.9', '0.4.10', '0.4.11', '0.4.12']) {
+  for (const version of ['0.4.6', '0.4.8', '0.4.9', '0.4.10', '0.4.11', '0.4.12', '0.4.13']) {
     for (const rel of ['PROTOCOL.md', 'types/_base.md']) {
       const target = path.join(dir, rel);
       fs.writeFileSync(target, fs.readFileSync(target, 'utf8').replace(/version: "[^"]+"/, `version: "${version}"`));

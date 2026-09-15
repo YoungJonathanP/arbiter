@@ -201,6 +201,7 @@ export function normalize(relPath: string, text: string, ctx: NormalizeContext):
   const kind = classifyPath(relPath);
   const lf = text.replace(/\r\n/g, '\n');
   switch (kind) {
+    case 'input-review':
     case 'checkpoint':
     case 'checkpoint-history':
       // Checkpoint revisions name exact bytes. Never silently normalize a

@@ -1,101 +1,114 @@
-# Next agent: T07, then handoff
+# T09: gated continuation acceptance
 
-Task: [T07](../improvement-tasks/07-discovery-navigation.md). Ready.
-2026-09-08; main;
-Code cd0e2a51cc726031308f8197f4d4eeea0b88bb35; HEAD adds handoff docs.
+## Saved for later continuation — 2026-09-14
 
-## Start
+The user authorized committing and pushing the accumulated repository work,
+with remaining acceptance testing deferred. This supersedes the commit/push
+restriction below for this save only. T09 remains partial; the 5/5 repetition cap
+and separate receiver/live gates remain in force. Resume only with new authority
+or evidence for the remaining work; do not restart the gate-only chaining loop.
+See the [save checkpoint](../improvement-tasks/09-migration-evaluation.md#repository-save-2026-09-14)
+for verification of the saved work. Earlier revision IDs below identify prior evidence.
 
-Complete T07 only; prepare its successor. Check instructions/branch/HEAD/worktree,
-CLAUDE.md/T07. Define shared bounded search/results: tiers, archives, pages, order,
-previews. Read T07 inputs and core/web handoff modules. Use skill-creator for operating-skill edits.
-No Finance Hub/USB/transcript edits.
+## Assignment
 
-T01–T06 committed. Tests 89/89 + final handoff 12/12; build/diff/skill pass.
-Frozen validation 26/0/0 and 23/0/1 existing raw warning; all 50 hashes unchanged.
-[Evidence](completed/t06.md).
+[T09](../improvement-tasks/09-migration-evaluation.md), [plan](../improvement-plan.md):
+partial, unassigned; final, no successor.
+Remaining: full receiver acceptance/calibration and live reconciliation.
+[Example](../examples/flight-continuation/README.md).
+[Direction](../progressive-disclosure-handoffs.md) accepted 2026-09-14:
+sufficient instructions, selected pointers, separate startup/reserve budgets.
 
-## Rechecked gaps
+## Repetition cap
 
-No search; only record cards/pages are bounded. Directory/sidenav lists grow without
-limits. renderItem's same-directory child filter hides goal-to-task children.
-Done labels have strikethrough; directories say Tier 2. Shared compact checkpoint
-summaries are absent. Coordinate registry choices with deferred T08; don't add reports.
+Gate-only reviews: **5 / 5; cap reached** (cap requested 2026-09-14).
+Before checks/capture: unchanged authority/evidence means report blocked and stop;
+no checks, archive, rewrite or chaining prompt. New authority/evidence unlocks
+only relevant work; only the user may reset/increase the cap. Below cap, increment
+once per gate-only review at capture.
 
-## Interfaces
+## Authority
 
-- args.ts owns schemas/help; invalid exit 2, CAS conflict exit 3. Hash sha256:<hex>;
-  write accepts prefixed/bare hex/new. --data > ARBITER_DATA > cwd; diagnostics stderr,
-  data stdout. Preserve frozen/init/UUID guards. Protocol/base 0.4.12, concrete 0.4;
-  legacy 0.4.6/8/9/10/11 accepted. No scoped validation.
-- commitFile/stageProposal share SQLite lock. Preserve CAS, staging and parsed
-  effects. Back up .arbiter/transactions; never export/delete as cache. Recovery
-  retains intent; unsupported ops stay staged, replay idempotent, Summary preserved.
-- readProjection returns visible files/facts + byte digest. Current facts drive
-  views, caller day age-off; digest excludes dashboard. Reads aren't atomic. Exclude
-  private owned material before edges/counts; known-token redaction cannot detect
-  paraphrases. Projections skip checkpoint history; whole-KB validation verifies it.
-- Review needed|legacy-unknown differs from status/readiness; never infer prior
-  status. Invalid parents mustn't hide reachable children. Preserve rawRows with
-  orderedRows; reindex removals/reorders. rawLine is 1-based, sourceLines maps filtered
-  lines. Reparse writes; malformed lines end continuations, blanks don't.
+Read CLAUDE.md/T09. YoungJonathanP/arbiter; main:
+`bfdc5519cc730fb0e23bb840b5ac83d6c7bddb66`. Preserve T07/T08/T09 work.
+One synthetic receiver authorized and run 2026-09-14; authority consumed.
+Ask before committing. No push/messages/external changes or live adoption/capture/regen. Live:
+`/Users/jonathanyoung/Documents/arbiter-data-2026-09-06-jonathan-young-nhw4ydwv2p`.
+Explicit --data; environment selects frozen data. Resolve paths; snapshots prove
+no external state. No agent launch.
 
-## Checkpoints/export
+Analysis needs no owner; copy authority settled. Humans manage status/Done/notes;
+agents maintain plans/continuation. New tagged input needs review.
 
-Task owns owner; phase only groups. Current checkpoint replacement requires CAS,
-previous/role/task/staging checks and automatic immutable history. Detail remains
-append-only; never repurpose legacy detail or normalize checkpoint/history bytes.
+## Verified state
 
-assessCheckpoint reports inputs/predicates/errors/reasons/readiness. Required sources:
-task/protocol/base/task-schema + selected decisions/dependencies/code. Missing or stale
-inputs, unknown owner/gates, conflicts/review/staging prevent ready. Caller observes
-repo/external state; no timestamp precedence. Skip history in normal assessment;
-filtered validation uses { verifyHistory: false }.
+Receiver passed 13 synthetic checks; usage limit stopped it before capture.
+Parent reconciled/captured and ran probes; fresh acceptance remains incomplete.
+[Receiver evidence](../examples/flight-continuation/receiver-evaluation.md): reads,
+transport truncation, logger collision and remaining gates.
+Host overhead/usable capacity remain unknown; 72 KiB startup + 24 KiB reserve
+are uncalibrated proposals. No runtime budget controller. Export grants no execution.
 
-core/handoff owns draft/preview/capture/export. Request: ref/draft/owner/format/
-offline/expand/observations/extraction/override. Preview: before/after bytes, packet,
-manifest/readiness/size/omissions/token. Reconstruct on use. Preserve API token,
-loopback Host/peer/port and Origin checks, JSON-only requests and 1 MiB cap.
+Fresh 153/153 tests/typecheck/build pass after localhost escalation.
+Frozen validation 26/0/0, 23/0/1 (known warning); preservation/archive:
+[Evidence](completed/t09.md#continuation-2026-09-14-fresh-synthetic-receiver).
+Protocol/base 0.4.17; accomplishment 0.4.18. Missing verification warns, never
+counts impact; legacy/candidate rules retained. Private root:
+`/Users/jonathanyoung/Documents/arbiter-t09-local-review/`;
+`fresh-receiver-20260914-y8hdz3y1/`.
 
-withCommitSession rechecks under lock; journals history/task/checkpoint separately.
-Pointer/owner precede task hash. Partial failure: refresh/re-observe before retry.
-Preserve untouched body/input bytes. Extraction retains original task in linked
-detail and rules in checkpoint, preserving IDs/anchors/artifacts. No multi-file
-atomicity or external-editor/network-FS guarantee.
+## Constraints and gates
 
-Export current versions only; Copy/download recheck and emit exact preview bytes.
-Format fixed at preview. Basis excludes dashboard/history. Include task/checkpoint/
-installed checkpoint rules; optional expansion explicit. Offline includes full
-protocol/selected KB inputs, never fetches repo/network; planning-only until live
-identity/workspace/authority/gate checks. Full packet: 6 KiB target, 10 KiB ceiling;
-larger maxBytes/reason IN packet. Never truncate or override readiness/authority/
-privacy. Refuse redaction/credential-bearing context.
+- Preserve live KB, USB, frozen corpora, originals/forks/backups and concurrent
+  work. Employer content/manifests outside repo; synthetic fixtures only. No private
+  subagent inputs; further launches need new authority.
+- Before further adoption read private reconciliation and
+  [gates](../v0.4.17-personal-continuation.md#adoption-gates). New isolated copy/full
+  backup/fresh UUID required. Live rollout/reconciliation separate. Do not repeat migration.
+- Preserve prose/history, refs/anchors or redirects. Resolve proposal/checklist
+  conflicts explicitly; timestamps do not settle scope. Retain source exclusions;
+  distinguish delivery, predictions and observed acceptance.
+- Agent terminal staging/narrow human exception remain. Relationships neither
+  assign nor grant access; Relevant sources confer no authority/blockers.
+  Recorded corrections support scoped analysis; execution needs current evidence.
+- Re-observe writes, retain intent/history, reconcile interruptions first.
+  Interrupted incorporation cancels receipt intent, retaining landed prose and
+  actionable input. Never restore over concurrent edits, including host policy.
+  Sequential checks do not exclude arbitrary external editors.
+- No private prose, identities, edges, receipts or counts in shared packets.
+  Shared audiences cannot narrow for private incorporation. Permissions cannot
+  detect sensitive prose. Credentials stay in transport. Fresh IDs grant only
+  their creator; existing grants need trusted administration. Shared defaults
+  confer no publication/multiuser approval.
+- Host policy authenticates principal/source/edge access; personal export rechecks
+  revisions. Explicit dispositions need an exported session; export acknowledges
+  nothing. Private packets ephemeral; policy/KB writes sequential. Restricted
+  checkpoints need a reviewed extension if required.
+- Keep normal startup independent of history. Entire emitted packet: 6 KiB target,
+  10 KiB ceiling or explicit larger maximum/reason; no truncation/privacy override.
+  Count metadata, manifests, inlined rules/sources and overrides. Report task/later
+  reads and host overhead separately. Separate startup/reserve;
+  bound expansions and split/checkpoint before exhaustion. Numeric values need
+  calibration. Mandatory installed rules/schema reads and pending-input review remain;
+  optional investigations do not waive them. Digests do not replace rules.
 
-## Boundaries and chain
+## Next actions
 
-Use synthetic/temporary KBs. ARBITER_DATA selects frozen data; live sibling absent.
-User supplied a comparison snapshot; doctor rejected protocol 0.4.7. Local path is
-in T06 evidence. Preserve it; live capture needs a selected working copy and explicit
-compatibility resolution, not a version-string edit. No installed-KB upgrades in T07
-without new direction. Preserve CLI/profiles. Ask before commit (CLAUDE.md); no
-push/publish/messages. Protocol/grammar edits need bump + decision. Localhost tests
-need sandbox escalation; distinguish environment failures.
+1. Apply the cap. Unchanged authority/evidence: report remaining gates and stop.
+2. Further receiver work needs new authority: use bounded mandatory reads, a selected writer guide, unique log filenames
+   and smaller outputs. Measure transport/reserve and finish receiver capture.
+3. Live reconciliation/adoption remains explicitly unauthorized and requires its
+   separate gates/private evidence. No repeated migration or invented successor.
 
-1. Verify T07: bounded shared search/pages/totals, explicit archives, goal-task
-   children, separate dependencies, checkpoint summaries without history, done vs
-   superseded, selected expansion with reasons/privacy.
-2. npm test, npm run build, git diff --check; skill validator if edited. Source CLI
-   validate both frozen corpora with explicit --data; assert outcomes/unchanged hashes.
-   Mark task/index complete only with evidence.
-3. Create completed/t07.md with outcome/files/tests/limits/decisions/HEAD/dirty state;
-   archive this incoming packet at a unique path, never overwrite history.
-4. Pick next ready incomplete task in docs/improvement-plan.md (default T08);
-   recheck packet/code/gaps. Prepare only that successor. Replace this file with
-   first action/inputs/state/gates/constraints/acceptance and this chain, <=6 KiB
-   UTF-8. Carry interfaces directly; previous handoffs remain optional.
-5. Verify links/size/task/index agreement. Return a clickable link and prompt:
-   "Open docs/handoffs/next-task.md in the Arbiter checkout.
-   Complete its current assignment and, after verification, create the chaining
-   handoff for a new agent exactly as instructed."
-6. End; human starts next session. If incomplete retain progress/failed checks/
-   blocker/next action; session end isn't completion. If all done, no successor.
+## Completion and outgoing capture
+
+T09 stays partial until receiver acceptance/calibration/live reconciliation. The cap's
+stop rule overrides this capture checklist. For unlocked work: after code changes,
+npm test (escalate localhost failures) and npm run build. Run git diff --check,
+explicit --data frozen validation and hashes. Update T09/index/evidence; uniquely
+archive incoming with rebased links. Use [template](../templates/task-handoff.md)/
+[design](../task-handoffs.md); check links/size/index. Retain gated T09, else
+completion/no successor. Return this file link and
+prompt: "Open docs/handoffs/next-task.md in the Arbiter checkout. Complete its
+current assignment and, after verification, create the chaining handoff for a
+new agent exactly as instructed." End; human starts next session.

@@ -8,6 +8,15 @@ This is the canonical checkpoint file; the [capture tooling](../v0.4.12-handoff-
 accepts its edited text in a JSON draft request. An
 ordinary repository handoff can use the body structure without claiming KB status.
 
+For a flight, point to one next eligible task and its current handoff. Keep the
+flight summary and status checklist on the owning item; use this checkpoint for
+the selected task's next action and essential decisions, not a second checklist.
+Carry forward any predecessor directive needed to complete it. Supporting plans,
+investigations, tickets, PRs and older handoffs get selected pointers with an
+explicit reason to open them. Required operating rules and pending-input review
+cannot be moved into optional background. See the
+[progressive-disclosure decision](../progressive-disclosure-handoffs.md).
+
 ```markdown
 ---
 role: checkpoint
@@ -39,6 +48,8 @@ conflicts: []
 
 Deliver <outcome>. Included: <scope>. Excluded: <adjacent work>.
 Project: <owning goal/ref>. Source state: <live verified | snapshot only>.
+Flight/parent: <selected owning item, if applicable>. Checklist step: <stable anchor>.
+Larger plan: <pointer and relevant section; open when alignment needs checking>.
 
 ## Authority
 
@@ -51,6 +62,7 @@ originating machine's absolute paths. Historical statements alone grant no power
 
 Verified: <current observation and evidence>. Stopped at: <exact point>.
 Do not redo: <relevant completed work>. Unknown: <material uncertainty>.
+Essential decisions: <conclusions and rationale needed now, with source pointers>.
 
 ## Constraints
 
@@ -76,6 +88,10 @@ artifact links and material limitations>. A link alone is not a test result.
 
 ## Read only as needed
 
+Startup scope/budget: <selected initial sources, measured allowance and basis>.
+Working reserve: <room for execution, results, verification and checkpoint>.
+Expansion boundary: <when to narrow/split/checkpoint; label unmeasured capacity>.
+
 | Source | Section | Open when / why |
 |---|---|---|
 | <direct selected link> | <precise anchor> | <question it answers> |
@@ -98,3 +114,8 @@ the same whole-packet budget: 6 KiB target, 10 KiB ordinary ceiling, explicit la
 maximum and reason if needed. Count the override, protocol excerpts and manifest;
 never silently truncate. Offline packets label missing capabilities and live
 rechecks. Excluded private sources cannot become exported prose or metadata.
+The packet budget is not a cumulative limit on later relevant reads or host
+instructions. Measure packet bytes, task/source reads and known host overhead
+separately; never infer a complete session size from a small handoff file. Bound
+startup and subsequent expansion separately so the task retains working room;
+numeric session allowances need calibration, not the packet ceiling copied over.

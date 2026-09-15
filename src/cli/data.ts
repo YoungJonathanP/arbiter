@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { fmGet } from '../core/fm.js';
 import { parseFrontmatter, parseTypeSchema, splitLines } from '../core/parse.js';
-import { ITEM_DIRS, TYPE_TO_DIR } from '../core/model.js';
+import { ITEM_DIRS, ITEM_TYPES, TYPE_TO_DIR } from '../core/model.js';
 import type { Args } from './args.js';
 
 // Locate assets from both src/cli and dist/src/cli, independently of cwd.
@@ -21,7 +21,7 @@ function packageRoot(): string {
 
 export const BUNDLED_CONTRACT = path.join(packageRoot(), 'assets/contract');
 const FROZEN_DIRS = [BUNDLED_CONTRACT, path.join(packageRoot(), 'arbiter-data'), path.join(packageRoot(), 'fixtures/arbiter-data')];
-const SCHEMA_VERSIONS: Record<string, string> = { _base: '0.4.12', task: '0.4', goal: '0.4', meeting: '0.4', journal: '0.4', accomplishment: '0.4' };
+const SCHEMA_VERSIONS: Record<string, string> = { _base: '0.4.17', ...Object.fromEntries(ITEM_TYPES.map(t => [t.type, t.version])) };
 
 function within(root: string, target: string): boolean {
   const rel = path.relative(root, target);
@@ -76,21 +76,25 @@ export function checkData(dir: string): 'empty' | 'ready' {
   if (!fs.statSync(dir).isDirectory()) throw new Error(`data path is not a directory: ${dir}`);
   if (fs.readdirSync(dir).length === 0) return 'empty';
   const errors: string[] = [];
+  let protocolVersion: string | undefined;
   const protocolPath = path.join(dir, 'PROTOCOL.md');
   if (!fs.existsSync(protocolPath) || !fs.statSync(protocolPath).isFile()) {
     errors.push('missing PROTOCOL.md');
   } else {
     const parsed = parseFrontmatter(splitLines(fs.readFileSync(protocolPath, 'utf8')));
+    protocolVersion = parsed ? fmGet(parsed.fm, 'version') : undefined;
     if (!parsed || fmGet(parsed.fm, 'id') !== 'protocol') errors.push('PROTOCOL.md: invalid protocol identity (expected id: protocol)');
-    if (!parsed || !['0.4.6', '0.4.8', '0.4.9', '0.4.10', '0.4.11', '0.4.12'].includes(fmGet(parsed.fm, 'version') ?? '')) errors.push('PROTOCOL.md: unsupported protocol version (supported: 0.4.6, 0.4.8, 0.4.9, 0.4.10, 0.4.11, 0.4.12)');
+    if (!parsed || !['0.4.6', '0.4.8', '0.4.9', '0.4.10', '0.4.11', '0.4.12', '0.4.13', '0.4.14', '0.4.15', '0.4.16', '0.4.17'].includes(fmGet(parsed.fm, 'version') ?? '')) errors.push('PROTOCOL.md: unsupported protocol version (supported: 0.4.6, 0.4.8, 0.4.9, 0.4.10, 0.4.11, 0.4.12, 0.4.13, 0.4.14, 0.4.15, 0.4.16, 0.4.17)');
   }
   for (const [name, version] of Object.entries(SCHEMA_VERSIONS)) {
     const rel = `types/${name}.md`;
     const file = path.join(dir, rel);
+    if (name === 'person' && !['0.4.16', '0.4.17'].includes(protocolVersion ?? '') && !fs.existsSync(file)) continue;
+    if (!['0.4.14', '0.4.15', '0.4.16', '0.4.17'].includes(protocolVersion ?? '') && ITEM_TYPES.find(t => t.type === name)?.introduced === '0.4.14' && !fs.existsSync(file)) continue;
     if (!fs.existsSync(file) || !fs.statSync(file).isFile()) { errors.push(`missing ${rel}`); continue; }
     const schema = parseTypeSchema(fs.readFileSync(file, 'utf8'));
     if (schema.schema !== name) errors.push(`${rel}: schema identity must be ${name}`);
-    if (!(name === '_base' ? ['0.4.6', '0.4.8', '0.4.9', '0.4.10', '0.4.11', version] : [version]).includes(schema.version ?? '')) errors.push(`${rel}: unsupported schema version (supported: ${version})`);
+    if (!(name === '_base' ? ['0.4.6', '0.4.8', '0.4.9', '0.4.10', '0.4.11', '0.4.12', '0.4.13', '0.4.14', '0.4.15', '0.4.16', version] : name === 'accomplishment' ? ['0.4', '0.4.14', version] : [version]).includes(schema.version ?? '')) errors.push(`${rel}: unsupported schema version (supported: ${version})`);
     if (name === '_base') {
       if (schema.extends) errors.push(`${rel}: base schema cannot extend another schema`);
       for (const field of ['id', 'type', 'title', 'updated']) {
@@ -98,7 +102,7 @@ export function checkData(dir: string): 'empty' | 'ready' {
       }
     } else {
       if (schema.extends !== '_base') errors.push(`${rel}: expected extends: _base`);
-      const kind = ['task', 'goal'].includes(name) ? 'work-item' : 'record';
+      const kind = ITEM_TYPES.find(t => t.type === name)!.kind;
       if (schema.kind !== kind || !schema.slugForm) errors.push(`${rel}: missing or invalid kind/slug-form`);
     }
   }

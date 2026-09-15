@@ -8,6 +8,7 @@ import { listStaged, sha256, stagedDirFor } from './corpus.js';
 import type { ProposalInput, ProposalReceipt } from './arbitrate.js';
 import { classifyPath, parseDocFile } from './parse.js';
 import { fmGet } from './fm.js';
+import { validateInputAppend, checkInputProtocol, parseInputLedger } from './input-storage-format.js';
 import { checkpointHistoryPath } from './checkpoint.js';
 
 export class CommitConflict extends Error {}
@@ -179,6 +180,15 @@ function commitFileLocked<T extends CommitPlan>(dir: string, target: string, pla
     if (result.verify && !result.verify(result.text)) throw new Error(`${target}: proposed postcondition failed`);
     if (before === result.text && !result.receipts?.length) return result;
     const kind = classifyPath(target);
+    if (kind === 'input-review') {
+      const task = target.split('/').slice(0, 2).join('/');
+      if (expected === undefined) throw new CommitConflict('Input-review writes require explicit CAS');
+      if (listStaged(dir, `${task}.md`).length) throw new CommitConflict('Task has pending proposals; resolve before input review');
+      if (!['0.4.15', '0.4.16', '0.4.17'].includes(fmGet(parseDocFile(read(path.join(dir, 'PROTOCOL.md')) ?? '').fm, 'version') ?? ''))
+        throw new Error('Input-review storage requires explicit protocol 0.4.15 adoption');
+      validateInputAppend(task, before, result.text);
+      checkInputProtocol(parseInputLedger(task, result.text), fmGet(parseDocFile(read(path.join(dir, 'PROTOCOL.md')) ?? '').fm, 'version') ?? '');
+    }
     if (kind === 'checkpoint-history') {
       if (before !== null) throw new CommitConflict('checkpoint history is immutable');
       if (!target.endsWith(`/${sha256(result.text)}.md`)) throw new Error('checkpoint history path must match its byte digest');

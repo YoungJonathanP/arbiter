@@ -9,7 +9,7 @@ export function readProjection(dataDir: string) {
   const source = walkCorpus(dataDir, { includeHistory: false });
   const allFacts = extractFacts(dataDir, source, SchemaSet.fromFiles(source));
   const policy = visibilityPolicy(allFacts, source);
-  const files = source.filter(f => policy.allowsPath(f.relPath)).map(f => ({ ...f, ...policy.redactSource(f.text) }));
+  const files = source.filter(f => policy.allowsPath(f.relPath)).map(f => { const visible = policy.redactSource(f.text); return { ...f, ...visible, redacted: visible.text !== f.text }; });
   const facts = visibleFacts(extractFacts(dataDir, files, SchemaSet.fromFiles(files))).map(f => ({ ...f,
     docs: f.docs.filter(d => policy.allowsPath(d.relPath) && policy.redact(d.title) === d.title),
   }));

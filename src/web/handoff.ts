@@ -2,12 +2,17 @@ import * as http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { assertMutable } from '../cli/data.js';
 import { draftCheckpoint, previewHandoff, captureCheckpoint, exportHandoff } from '../core/handoff.js';
+import { inputReviewView, captureQuickNote, setHumanTaskStatus, undoHumanTaskStatus, beginStoredInputReview, saveInputReview, linkInput, reconcileInputIntent, previewInputIncorporation, applyInputIncorporation, saveAppointment, createConnectedPerson, connectInputEntity, disconnectInputEntity, inputRelationships, inputSourcePreview } from '../core/input-storage.js';
+import type { PersonalAccess } from './personal-access.js';
 import { CommitConflict } from '../core/commit.js';
+import { previewPersonalContinuation, exportPersonalContinuation, finishPersonalContinuation, type PersonalContinuation } from '../core/personal-continuation.js';
 
 /** Local browser writes require a per-process token and a loopback Host/peer.
  * Origin checks also prevent cross-site requests and DNS rebinding. */
-export function handoffApi(dir: string) {
+export function handoffApi(dir: string, personal?: PersonalAccess) {
   const token = randomBytes(32).toString('hex');
+  const incorporations = new Map<string, { ref: string; actor: string; expires: number; value: ReturnType<typeof previewInputIncorporation> }>();
+  const continuations = new Map<string, { ref: string; actor: string; expires: number; exported: boolean; value: PersonalContinuation }>();
   const handle = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     const send = (status: number, value: unknown) => {
       res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -28,6 +33,77 @@ export function handoffApi(dir: string) {
         if (size > 1024 * 1024) return send(413, { error: 'Request exceeds 1 MiB' });
       }
       const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      // Actor is the local operator capability, never a supplied person/account.
+      // The loopback token authorizes this local session; it grants no private access.
+      const actor = personal ? personal.authenticate(req.headers.authorization) : 'local-operator';
+      if (!actor) return send(401, { error: 'Personal authentication required' });
+      const access = personal?.policy;
+      if (typeof input.action === 'string' && input.action.startsWith('continuation-')) {
+        if (!personal || !access) return send(403, { error: 'Personal authentication required' });
+        for (const [id, entry] of continuations) if (entry.expires < Date.now()) continuations.delete(id);
+        if (input.action === 'continuation-preview') {
+          const id = randomBytes(32).toString('hex');
+          const value = previewPersonalContinuation(dir, { ...input.request, ref: input.ref }, actor, access, id);
+          if (continuations.size >= 32) continuations.delete(continuations.keys().next().value!);
+          continuations.set(id, { ref: input.ref, actor, expires: Date.now() + 15 * 60000, exported: false, value });
+          return send(200, { id, packet: value.packet, bytes: value.bytes, allowed: value.allowed, warning: value.warning });
+        }
+        const entry = continuations.get(input.previewId);
+        if (!entry || entry.ref !== input.ref || entry.actor !== actor) throw new Error('Continuation expired or unavailable; preview again');
+        if (input.action === 'continuation-export') {
+          const packet = exportPersonalContinuation(dir, entry.value, actor, access);
+          entry.exported = true;
+          return send(200, { packet });
+        }
+        if (input.action === 'continuation-review') {
+          assertMutable(dir);
+          if (!entry.exported) throw new Error('Export and read the exact personal packet before recording decisions');
+          const result = finishPersonalContinuation(dir, entry.value, actor, access, input.decisions);
+          continuations.delete(input.previewId);
+          return send(200, result);
+        }
+        throw new Error('Unknown continuation action');
+      }
+      if (personal && !['input-view', 'input-review', 'input-incorporation-preview', 'input-incorporation-apply', 'input-reconcile', 'input-source-preview', 'input-appointment', 'input-link', 'input-note', 'input-person', 'input-connect', 'input-disconnect', 'input-status', 'input-undo'].includes(input.action))
+        return send(403, { error: 'This action is unavailable in the personal app' });
+      if (typeof input.action === 'string' && input.action.startsWith('input-')) {
+        if (input.action !== 'input-view') assertMutable(dir);
+        switch (input.action) {
+          case 'input-view': break;
+          case 'input-source-preview': return send(200, inputSourcePreview(dir, input.ref, actor, input.source, access));
+          case 'input-incorporation-preview': {
+            const value = previewInputIncorporation(dir, input.ref, actor, input.input, input.basis, input.incorporation, input.reason, access);
+            for (const [id, entry] of incorporations) if (entry.expires < Date.now()) incorporations.delete(id);
+            if (incorporations.size >= 32) incorporations.delete(incorporations.keys().next().value!);
+            const id = randomBytes(32).toString('hex');
+            incorporations.set(id, { ref: input.ref, actor, expires: Date.now() + 15 * 60000, value });
+            return send(200, { id, before: value.before, after: value.after });
+          }
+          case 'input-incorporation-apply': {
+            const entry = incorporations.get(input.previewId); incorporations.delete(input.previewId);
+            if (!entry || entry.ref !== input.ref || entry.actor !== actor || entry.expires < Date.now()) throw new Error('Preview expired; review again');
+            applyInputIncorporation(dir, input.ref, actor, entry.value, access); break;
+          }
+          case 'input-appointment': saveAppointment(dir, input.ref, actor, input.basis, input.appointment, undefined, access); break;
+          case 'input-person': createConnectedPerson(dir, input.ref, actor, input.basis, input.title, input.role, access); break;
+          case 'input-connect': connectInputEntity(dir, input.ref, input.entity, input.role, input.basis, actor, undefined, access); break;
+          case 'input-disconnect': disconnectInputEntity(dir, input.ref, input.id, input.basis, actor, undefined, access); break;
+          case 'input-note': captureQuickNote(dir, input.ref, input.note, input.basis, actor, { eventDate: input.eventDate, personal: !!personal }, access); break;
+          case 'input-link': linkInput(dir, input.ref, input.source, input.basis, actor, undefined, access); break;
+          case 'input-status': setHumanTaskStatus(dir, input.ref, actor, input.basis, input.status, input.checklist, undefined, access); break;
+          case 'input-undo': undoHumanTaskStatus(dir, input.ref, actor, input.basis, undefined, access); break;
+          case 'input-reconcile': reconcileInputIntent(dir, input.ref, actor, input.basis, access); break;
+          case 'input-review': {
+            if (!['presented', 'deferred', 'dismissed'].includes(input.disposition)) throw new Error('Select a review disposition');
+            const preview = beginStoredInputReview(dir, input.ref, actor, [input.input], access);
+            saveInputReview(dir, input.ref, actor, { ...preview, basis: input.basis },
+              [{ input: input.input, disposition: input.disposition, reason: input.reason }], {}, access);
+            break;
+          }
+          default: throw new Error('Unknown input action');
+        }
+        return send(200, { ...inputReviewView(dir, input.ref, actor, access), relationships: inputRelationships(dir, input.ref, actor, access) });
+      }
       switch (input.action) {
         case 'draft': return send(200, { checkpoint: draftCheckpoint(dir, input.ref) });
         case 'preview': return send(200, previewHandoff(dir, input.request));
@@ -62,6 +138,7 @@ export function handoffPanel(ref: string, owner: string, token: string, esc: (te
   <p id="handoff-status" role="status" aria-live="polite"></p>
   <div id="handoff-result" hidden>
     <details><summary>Task and checkpoint changes</summary><pre id="handoff-changes"></pre></details>
+    <details><summary>Selected sources and reasons</summary><p>To include full contents, add only the needed KB paths to <code>expand</code> in the options above and preview again. Each reason comes from the checkpoint input’s purpose. Related files and older checkpoints are never selected automatically.</p><pre id="handoff-sources" style="white-space:pre-wrap"></pre></details>
     <p>Exact packet preview — includes revisions, source manifest, readiness, byte count and omitted context.</p>
     <pre id="handoff-packet" style="white-space:pre-wrap"></pre>
     <button type="button" id="handoff-capture" disabled>Capture reviewed draft</button>
@@ -95,6 +172,9 @@ export const HANDOFF_JS = String.raw`
   function show(value) {
     preview = value; get('result').hidden = false;
     get('packet').textContent = value.packet;
+    get('sources').textContent = value.assessment.inputs.map(function (input) {
+      return input.source + '\n  Reason: ' + input.purpose + '\n  ' + (input.source.indexOf('kb:') !== 0 ? 'Revision only; resolve externally' : (input.source === 'kb:' + ref + '.md' || value.request.offline || (value.request.expand || []).indexOf(input.source.slice(3)) >= 0) ? 'Full contents selected' : input.source === 'kb:PROTOCOL.md' ? 'Checkpoint rules excerpt included' : 'Revision only');
+    }).join('\n\n');
     get('changes').textContent = 'CURRENT TASK\n' + value.taskBefore + '\nPROPOSED TASK\n' + value.taskAfter + '\nCURRENT CHECKPOINT\n' + (value.checkpointBefore || '(none)') + '\nPROPOSED CHECKPOINT\n' + value.checkpoint;
     get('status').textContent = value.assessment.readiness + ' · ' + value.bytes + ' UTF-8 bytes\n' + value.assessment.reasons.concat(value.diagnostics).join('\n');
     buttons();

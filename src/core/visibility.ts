@@ -8,12 +8,12 @@ import { parseItemFile } from './parse.js';
 export function visibilityPolicy(facts: ItemFacts[], files: CorpusFile[] = []) {
   const hidden = facts.filter(f => f.visibility === 'private');
   const privateDocs = facts.flatMap(f => f.docs.filter(d => d.visibility === 'private'));
-  const privateFiles = files.filter(f => f.kind !== 'checkpoint-history' && fmGet(parseItemFile(f.text).fm, 'visibility') === 'private');
+  const privateFiles = files.filter(f => f.kind !== 'checkpoint-history' && f.kind !== 'input-review' && fmGet(parseItemFile(f.text).fm, 'visibility') === 'private');
   const paths = new Set([...hidden.map(f => f.relPath), ...privateFiles.map(f => f.relPath), ...privateDocs.map(d => d.relPath)]);
   const tokens = [...new Set([...hidden.flatMap(f => [f.ref, f.id, f.title]),
     ...privateDocs.flatMap(d => [d.relPath, d.docId, d.title]),
     ...privateFiles.flatMap(f => [f.relPath, f.relPath.split('/').at(-1)!.replace(/\.md$/, ''), fmGet(parseItemFile(f.text).fm, 'title') ?? ''])])].filter(Boolean);
-  const allowsPath = (rel: string): boolean => !/^tasks\/[^/]+\/checkpoints\//.test(rel) && !paths.has(rel) && !hidden.some(f => rel.startsWith(`${f.ref}/`) || rel.startsWith(`${f.ref}.staged/`));
+  const allowsPath = (rel: string): boolean => !/^tasks\/[^/]+\/(checkpoints\/|input-review\.md$)/.test(rel) && !paths.has(rel) && !hidden.some(f => rel.startsWith(`${f.ref}/`) || rel.startsWith(`${f.ref}.staged/`));
   // Drop complete source lines carrying a known private identifier/title. This
   // also protects raw/agent previews; canonical source files remain untouched.
   const redact = (text: string): string => text.split('\n').filter(line => !tokens.some(token => line.includes(token))).join('\n');
@@ -40,6 +40,9 @@ export function visibleFacts(facts: ItemFacts[]): ItemFacts[] {
     summaryFirst: f.summaryFirst === undefined ? undefined : policy.redact(f.summaryFirst),
     parent: f.parent && refs.has(f.parent) ? f.parent : undefined,
     prev: f.prev && refs.has(f.prev) ? f.prev : undefined,
+    source: f.source?.filter(ref => refs.has(ref)),
+    supersededBy: f.supersededBy && refs.has(f.supersededBy) ? f.supersededBy : undefined,
+    scope: f.scope === undefined ? undefined : policy.redact(f.scope),
     related: f.related.filter(ref => refs.has(ref)),
     steps: f.steps.filter(s => policy.redact(s.text) === s.text),
     docs: f.docs.filter(d => d.visibility !== 'private' && policy.allowsPath(d.relPath) && policy.redact(d.title) === d.title),

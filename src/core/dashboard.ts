@@ -1,6 +1,7 @@
 // Dashboard projections always use current facts; timestamps are event metadata.
 
 import type { DashboardEntry, DashRow, Frontmatter } from './model.js';
+import { ITEM_TYPES } from './model.js';
 import { fmSetRaw } from './fm.js';
 import type { ItemFacts, Nesting } from './facts.js';
 import { computeNesting, daysBetween, isTerminal } from './facts.js';
@@ -9,13 +10,7 @@ import { sha256 } from './corpus.js';
 import { parseDashboard } from './parse.js';
 import { serializeDashboard } from './serialize.js';
 
-const CARDS: { label: string; dir: string; kind: 'work-item' | 'record' }[] = [
-  { label: 'Tasks', dir: 'tasks', kind: 'work-item' },
-  { label: 'Goals', dir: 'goals', kind: 'work-item' },
-  { label: 'Meetings', dir: 'meetings', kind: 'record' },
-  { label: 'Journal', dir: 'journal', kind: 'record' },
-  { label: 'Accomplishments', dir: 'accomplishments', kind: 'record' },
-];
+const CARDS = ITEM_TYPES;
 
 const RECORD_CARD_LIMIT = 5;
 const AGE_OFF_DAYS = 7;
@@ -56,9 +51,11 @@ function agedOff(status: string | undefined, entryDate: string, today: string): 
   return isTerminal(status) && entryDate !== '' && daysBetween(entryDate, today) > AGE_OFF_DAYS;
 }
 
-function buildCards(candidates: Map<string, Candidate[]>, today: string, nest: Nesting): { label: string; count: number; rows: DashRow[] }[] {
+function buildCards(candidates: Map<string, Candidate[]>, today: string, nest: Nesting, protocolRaw: string): { label: string; count: number; rows: DashRow[] }[] {
   const cards = [];
   for (const def of CARDS) {
+    if (def.introduced === '0.4.16' && !['0.4.16', '0.4.17'].some(v => protocolRaw.includes(v)) && !candidates.has(def.dir)) continue;
+    if (def.introduced === '0.4.14' && !['0.4.14', '0.4.15', '0.4.16', '0.4.17'].some(v => protocolRaw.includes(v)) && !candidates.has(def.dir)) continue;
     const backed = (candidates.get(def.dir) ?? []).filter(c =>
       !c.facts.archived && !agedOff(c.entry.status, c.entry.date, today) && !nest.isSub(c.facts.ref));
 
@@ -77,7 +74,8 @@ function buildCards(candidates: Map<string, Candidate[]>, today: string, nest: N
       });
       const entries = backed;
       count = entries.length;
-      rows = entries.map((c) => ({ kind: 'entry', entry: c.entry }));
+      rows = entries.slice(0, RECORD_CARD_LIMIT).map((c) => ({ kind: 'entry', entry: c.entry }));
+      if (entries.length > RECORD_CARD_LIMIT) rows.push({ kind: 'overflow', count: entries.length - RECORD_CARD_LIMIT, dir: def.dir });
     } else {
       // recent-first: by date desc; top 5 on the card, the rest behind overflow
       backed.sort((a, b) => {
@@ -135,7 +133,7 @@ export function regenFull(facts: ItemFacts[], prevText: string | null, opts: Reg
   // Unverifiable carried entries/strays cannot establish visibility.
   return serializeDashboard({
     fm: buildFrontmatter(maxUpdated, opts),
-    cards: buildCards(candidates, opts.now.slice(0, 10), nest),
+    cards: buildCards(candidates, opts.now.slice(0, 10), nest, opts.protocolRaw),
     pointer: POINTER,
   });
 }

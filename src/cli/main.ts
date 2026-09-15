@@ -1,3 +1,5 @@
+import { impactReport, promotionCandidate } from '../core/evidence.js';
+import { discover } from '../core/discovery.js';
 // arbiter CLI — the headless client over the core library. Agents-first:
 // everything here is also doable with plain file tools per PROTOCOL.md; the
 // CLI just makes it cheap and adds the CAS write path.
@@ -32,6 +34,7 @@ import { SchemaSet } from '../core/schema.js';
 import { triage } from '../core/triage.js';
 import { validateCorpus } from '../core/validate.js';
 import { TYPE_TO_DIR } from '../core/model.js';
+import { personalAccessFile } from '../web/personal-access.js';
 import { createArbiterServer } from '../web/server.js';
 
 import { type Args, parseArgs, help } from './args.js';
@@ -252,11 +255,16 @@ function cmdNew(args: Args): void {
   const fmLines = ['---', `id: ${id}`, `type: ${type}`, `title: ${title}`];
   if (schema.kind === 'work-item') fmLines.push('status: todo');
   if (schema.fields.get('date')?.required) fmLines.push(`date: ${eventDate}`);
-  if (type === 'accomplishment') fmLines.push('source: []');
+  for (const [key, def] of schema.fields) {
+    const candidateDefault = type === 'accomplishment' && schema.version === '0.4.18' && key === 'verification';
+    if ((!def.required && !candidateDefault) || ['id', 'type', 'title', 'status', 'date', 'created', 'updated'].includes(key)) continue;
+    if (def.type === 'ref-list') fmLines.push(`${key}: []`);
+    else if (def.default) fmLines.push(`${key}: ${def.default}`);
+  }
   fmLines.push(`created: ${today}`, `updated: ${now}`, '---');
   const sections: string[] = [];
   for (const [name, def] of schema.sections) {
-    if (def.required) sections.push(`## ${name}`, '');
+    if (def.required || (type === 'accomplishment' && schema.version === '0.4.18' && ['Observations', 'Uncertainty'].includes(name))) sections.push(`## ${name}`, '');
   }
   const pointerReminder =
     schema.kind === 'work-item'
@@ -341,7 +349,13 @@ function cmdServe(args: Args): void {
   // local-only by design: the data directory is not for a public audience.
   // Overriding the bind address is a deliberate, explicit act.
   const host = typeof args.flags.get('host') === 'string' ? String(args.flags.get('host')) : '127.0.0.1';
-  const server = createArbiterServer(dir);
+  const policyFile = args.flags.get('personal-policy');
+  if (policyFile && !['127.0.0.1', '::1', 'localhost'].includes(host)) throw new Error('Personal review requires a loopback bind');
+  if (policyFile) {
+    const relative = path.relative(fs.realpathSync(dir), fs.realpathSync(String(policyFile)));
+    if (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)) throw new Error('Personal policy must stay outside the KB');
+  }
+  const server = createArbiterServer(dir, { personalAccess: policyFile ? personalAccessFile(String(policyFile)) : undefined });
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
       console.error(`http://${host}:${port} is already serving (arbiter serve running?) — open it, or pass --port <n>`);
@@ -403,7 +417,7 @@ function main(): void {
     initData(selectedDir);
     cmdRegen(args);
     cmdValidate(args);
-    console.log('initialized KB: protocol 0.4.12; schemas _base 0.4.12, concrete types 0.4');
+    console.log('initialized KB: protocol 0.4.17/base 0.4.17; concrete schemas 0.4, 0.4.14, 0.4.16 and 0.4.18');
     return;
   }
   const state = checkData(selectedDir);
@@ -413,11 +427,17 @@ function main(): void {
     throw new Error(message);
   }
   if (args.cmd === 'doctor') {
-    console.log(`KB identity: protocol ${fmGet(parseFrontmatter(splitLines(fs.readFileSync(path.join(selectedDir, 'PROTOCOL.md'), 'utf8')))!.fm, 'version')}; concrete types 0.4`);
+    console.log(`KB identity: protocol ${fmGet(parseFrontmatter(splitLines(fs.readFileSync(path.join(selectedDir, 'PROTOCOL.md'), 'utf8')))!.fm, 'version')}; supported concrete schemas 0.4, 0.4.14, 0.4.16 and 0.4.18`);
     cmdValidate(args);
     return;
   }
   switch (args.cmd) {
+    case 'report':
+      process.stdout.write(impactReport(readProjection(selectedDir), String(args.flags.get('since')), String(args.flags.get('until') ?? nowStamp(args).slice(0, 10)), nowStamp(args).slice(0, 10)));
+      break;
+    case 'promote':
+      process.stdout.write(promotionCandidate(readProjection(selectedDir), args.positional[0]!.replace(/\.md$/, ''), String(args.flags.get('date')), nowStamp(args)));
+      break;
     case 'checkpoint':
     case 'handoff':
       cmdHandoff(args);
@@ -431,6 +451,17 @@ function main(): void {
     case 'triage':
       cmdTriage(args);
       break;
+    case 'search': {
+      const result = discover(readProjection(selectedDir), { q: args.positional[0] ?? '',
+        ...Object.fromEntries([...args.flags].filter(([k]) => !['data', 'json', 'page', 'page-size'].includes(k))),
+        page: Number(args.flags.get('page') ?? 0), pageSize: Number(args.flags.get('page-size') ?? 10) });
+      if (args.flags.has('json')) console.log(JSON.stringify(result, null, 2));
+      else {
+        console.log(`${result.total} results; page ${result.page}; next ${result.nextPage ?? 'none'}`);
+        for (const row of result.results) console.log(`${row.title}${row.status ? ` [${row.status}]` : ''}${row.archived ? ' (archived)' : ''} -> ${row.path}\n  ${row.preview}${row.parent ? `\n  parent: ${row.parent}` : ''}${row.checkpoint ? `\n  checkpoint: ${row.checkpoint.readiness}; ${row.checkpoint.nextAction}` : ''}`);
+      }
+      break;
+    }
     case 'query':
       cmdQuery(args);
       break;
