@@ -303,7 +303,7 @@ const CSS = `
     --shadow: 0 1px 2px rgba(38,36,31,.05), 0 4px 14px rgba(38,36,31,.05);
     --nav-w:224px; --nav-gap:30px; --toggle-w:32px; --topbar-gap:14px;
     --nav-col:calc(var(--nav-w) + var(--nav-gap));
-    --card-min:300px; --board-gap:20px;
+    --card-min:300px; --board-gap:20px; --card-pad:16px;
     --main-min:calc(var(--card-min) * 2 + var(--board-gap));
     --serif:"Iowan Old Style","Palatino",Georgia,ui-serif,serif;
     --sans:ui-sans-serif,-apple-system,"Segoe UI","Helvetica Neue",sans-serif;
@@ -403,6 +403,9 @@ const CSS = `
   .board-meta { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:18px;
                 font-family:var(--mono); font-size:12px; color:var(--muted); }
   .board-meta b { color:var(--ink); font-weight:600; }
+  .board-foot { margin-top:18px; font-family:var(--mono); font-size:11px;
+                color:var(--faint); word-break:break-all; }
+  .board-foot b { color:var(--muted); font-weight:400; }
   .board { display:grid; gap:var(--board-gap);
            grid-template-columns:repeat(auto-fill, minmax(max(var(--card-min), (100% - var(--board-gap)) / 2), 1fr)); }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; box-shadow:var(--shadow);
@@ -414,10 +417,11 @@ const CSS = `
   .card-count { font-family:var(--mono); font-size:12px; color:var(--muted);
                 background:color-mix(in srgb, var(--neutral) 12%, transparent); padding:1px 8px; border-radius:999px; }
   .card-items { list-style:none; margin:0; padding:6px 0; flex:1; }
-  .card-item a { display:flex; align-items:center; gap:10px; padding:7px 16px; color:var(--ink); }
+  .card-item a { display:flex; align-items:center; gap:10px; padding:7px var(--card-pad); color:var(--ink); }
   .card-item a:hover { background:var(--panel-hover); text-decoration:none; }
   .card-item .title { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:14px; }
   .card-item.is-done .title { color:var(--muted); }
+  .card-item .rows-note { margin:0 0 8px; padding:0 var(--card-pad); }
   .card-item .when { font-family:var(--mono); font-size:11px; color:var(--faint); flex:none; font-variant-numeric:tabular-nums; }
   .card-more { display:block; padding:9px 16px 11px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); }
   .card-more:hover { background:var(--panel-hover); color:var(--accent); text-decoration:none; }
@@ -930,7 +934,6 @@ export function createArbiterServer(dataDir: string, options: { personalAccess?:
         const epic = epicColors(facts);
         const meta = dash.fm
           ? `<div class="board-meta">
-               <span>inputs <b>${esc(snapshot.inputs)}</b></span>
                <span>updated <b>${esc(fmGet(dash.fm, 'updated') ?? '?')}</b></span>
                <span>generated <b>${esc(fmGet(dash.fm, 'generated') ?? '?')}</b></span>
                <span>protocol <b>${esc(fmGet(dash.fm, 'protocol') ?? '?')}</b></span>
@@ -967,7 +970,8 @@ export function createArbiterServer(dataDir: string, options: { personalAccess?:
             <span class="sub">Dashboard · local only · files are truth</span></div>
           ${meta}
           <div class="board">${cards}</div>
-          ${agentView('DASHBOARD.md', text)}`;
+          ${agentView('DASHBOARD.md', text)}
+          <footer class="board-foot">inputs <b>${esc(snapshot.inputs)}</b></footer>`;
         return page('Dashboard', '/', facts, body, dashStamp());
       };
 
