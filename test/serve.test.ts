@@ -261,3 +261,18 @@ test('serve: current human, agent, preview and raw views exclude private files a
   assert.equal(fs.readFileSync(`${dir}/${rel}`, 'utf8'), sourceBefore);
   assert.equal(fs.readFileSync(`${dir}/${secretRef}.md`, 'utf8'), secret);
 });
+
+test('serve: the board and the side nav share one display order', async () => {
+  const dir = copyFixture();
+  const expected = ['tasks', 'journal', 'goals', 'accomplishments', 'meetings', 'people', 'findings', 'decisions'];
+  await withServer(dir, async (base) => {
+    const dash = await (await fetch(`${base}/`)).text();
+    const cards = [...dash.matchAll(/<a class="card-head" href="\/dir\/([a-z]+)"/g)].map((m) => m[1]);
+    assert.ok(cards.length > 1, 'the fixture board renders cards');
+    // the fixture has no entry for every type, so the board is a subsequence of the display order
+    assert.deepEqual(cards, expected.filter((d) => cards.includes(d)), 'cards read row-major across the two-column board');
+    const nav = [...dash.matchAll(/<a class="n-label" href="\/dir\/([a-z]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(nav, expected, 'the side nav reads in the same order as the board');
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
